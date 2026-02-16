@@ -1,0 +1,23 @@
+warning: Git tree '/home/jhhuh/Sync/proj/ghc-openmp' is dirty
+ghc-openmp dev environment loaded
+GHC: The Glorious Glasgow Haskell Compilation System, version 9.10.3
+GCC: gcc (GCC) 15.2.0
+=== Native libgomp (OMP_NUM_THREADS=4) ===
+Hello from thread 0 of 4
+Hello from thread 1 of 4
+Hello from thread 2 of 4
+Hello from thread 3 of 4
+Sum = 4950
+Only once
+Task A
+Task B
+
+=== GHC-OMP runtime (OMP_NUM_THREADS=4) ===
+Hello from thread 3 of 4
+Hello from thread 0 of 4
+Hello from thread 2 of 4
+Hello from thread 1 of 4
+Sum = 4950
+Only once
+Task A
+Task B

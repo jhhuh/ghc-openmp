@@ -7,3 +7,4 @@ dist-newstyle/
 *.so
 *.dylib
 *.a
+build/
