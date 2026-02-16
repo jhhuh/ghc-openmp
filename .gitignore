@@ -1,0 +1,9 @@
+result
+result-*
+.direnv/
+dist-newstyle/
+*.o
+*.hi
+*.so
+*.dylib
+*.a
