@@ -97,6 +97,26 @@ test-rts: build/test_omp_rts
 
 test-all: test-native test-ghcomp test-rts-embed test-rts
 
+# ---- Benchmarks ----
+
+build/bench_native: src/bench_overhead.c
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -o $@ $< -lm
+
+build/bench_rts: src/bench_overhead.c build/ghc_omp_runtime_rts.o build/HsStub.o
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -c $< -o build/bench_overhead_rts.o
+	$(GHC) -threaded -no-hs-main \
+		build/bench_overhead_rts.o build/ghc_omp_runtime_rts.o build/HsStub.o \
+		-o $@ -lpthread -lm
+
+bench: build/bench_native build/bench_rts
+	@echo "=== Native libgomp ==="
+	@OMP_NUM_THREADS=4 build/bench_native
+	@echo ""
+	@echo "=== GHC RTS-backed ==="
+	@OMP_NUM_THREADS=4 build/bench_rts
+
 # Verify our library exports the right symbols
 check-symbols: build/libghcomp.so
 	@echo "=== Exported GOMP/omp symbols ==="
