@@ -32,6 +32,40 @@
  * ========================================================================= */
 
 #define GHC_OMP_MAX_THREADS 128
+#define SPIN_ITERS 4000  /* spin iterations before falling back to condvar */
+
+/* =========================================================================
+ * Sense-reversing centralized barrier (lock-free)
+ *
+ * Each thread has a local sense flag. Threads atomically decrement a
+ * shared counter. The last thread flips the global sense, releasing all.
+ * ========================================================================= */
+
+typedef struct {
+    atomic_int count;      /* threads remaining */
+    atomic_int sense;      /* global sense flag */
+    int size;              /* team size (reset value) */
+} spin_barrier_t;
+
+static inline void spin_barrier_init(spin_barrier_t *b, int n) {
+    atomic_store_explicit(&b->count, n, memory_order_relaxed);
+    atomic_store_explicit(&b->sense, 0, memory_order_relaxed);
+    b->size = n;
+}
+
+static inline void spin_barrier_wait(spin_barrier_t *b, int *local_sense) {
+    *local_sense = 1 - *local_sense;
+    if (atomic_fetch_sub_explicit(&b->count, 1, memory_order_acq_rel) == 1) {
+        /* Last thread: reset counter and flip sense */
+        atomic_store_explicit(&b->count, b->size, memory_order_relaxed);
+        atomic_store_explicit(&b->sense, *local_sense, memory_order_release);
+    } else {
+        /* Spin until sense flips */
+        while (atomic_load_explicit(&b->sense, memory_order_acquire) != *local_sense) {
+            __builtin_ia32_pause();
+        }
+    }
+}
 
 /* =========================================================================
  * Internal state
@@ -46,11 +80,9 @@ static __thread bool tl_in_parallel = false;
 static __thread int tl_single_generation = 0;
 static volatile int g_single_generation = 0;
 
-/* GOMP_barrier */
-static pthread_mutex_t g_barrier_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t g_barrier_cond = PTHREAD_COND_INITIALIZER;
-static int g_barrier_count = 0;
-static int g_barrier_generation = 0;
+/* GOMP_barrier — atomic sense-reversing barrier */
+static spin_barrier_t g_omp_barrier;
+static __thread int tl_barrier_sense = 0;
 
 /* Global defaults */
 static int g_num_threads = 0; /* 0 = use nprocs / OMP_NUM_THREADS */
@@ -64,28 +96,27 @@ static int g_rts_num_caps = 0; /* actual number of Capabilities after init */
 /* =========================================================================
  * Worker pool — persistent OS threads pinned to GHC Capabilities
  *
- * Instead of creating/destroying threads per parallel region, we keep
- * a pool of workers alive. Each waits for work, executes it, signals
- * completion, and goes back to waiting.
+ * Lock-free work dispatch using atomic generation counter.
+ * Workers spin on generation change (no mutex on the hot path).
  * ========================================================================= */
 
 typedef struct {
-    /* Work item (set by master before signaling) */
+    /* Work item — written by master before generation increment */
     void (*fn)(void *);
     void *data;
-    int num_threads;   /* team size for this parallel region */
+    int num_threads;           /* team size for this parallel region */
 
-    /* Synchronization */
-    pthread_mutex_t mutex;
-    pthread_cond_t work_available;   /* master→workers: new generation */
-    pthread_cond_t work_done;        /* workers→master: completion count */
-    pthread_barrier_t start_barrier; /* sync before fn() */
-    pthread_barrier_t end_barrier;   /* sync after fn() */
+    /* Lock-free synchronization */
+    atomic_int generation;     /* incremented each GOMP_parallel call */
+    atomic_int workers_done;   /* completion counter */
+    atomic_bool active;        /* false = shutdown */
 
-    /* State */
-    bool active;          /* true while worker should stay alive */
-    int generation;       /* incremented each GOMP_parallel call */
-    int workers_done;     /* count of workers that finished fn() */
+    spin_barrier_t start_barrier;  /* sync before fn() */
+    spin_barrier_t end_barrier;    /* sync after fn() */
+
+    /* Fallback mutex+condvar for idle sleep (power efficiency) */
+    pthread_mutex_t sleep_mutex;
+    pthread_cond_t sleep_cond;
 } worker_pool_t;
 
 static pthread_t g_worker_threads[GHC_OMP_MAX_THREADS];
@@ -114,53 +145,75 @@ static void *worker_loop(void *arg) {
     DBG("worker %d: entering work loop", worker_id);
 
     int my_gen = 0; /* track which generation we've processed */
+    int start_sense = 0, end_sense = 0; /* per-thread sense for barriers */
 
     while (1) {
-        /* Wait for new work (generation change) */
-        pthread_mutex_lock(&g_pool.mutex);
-        while (g_pool.generation == my_gen && g_pool.active) {
-            pthread_cond_wait(&g_pool.work_available, &g_pool.mutex);
+        /* Spin-wait for new work (generation change) */
+        int new_gen;
+        int spins = 0;
+        while (1) {
+            new_gen = atomic_load_explicit(&g_pool.generation,
+                                           memory_order_acquire);
+            if (new_gen != my_gen) break;
+            if (!atomic_load_explicit(&g_pool.active,
+                                      memory_order_relaxed)) goto done;
+            if (++spins < SPIN_ITERS) {
+                __builtin_ia32_pause();
+            } else {
+                /* Fall back to condvar for power efficiency */
+                pthread_mutex_lock(&g_pool.sleep_mutex);
+                /* Re-check under lock */
+                new_gen = atomic_load_explicit(&g_pool.generation,
+                                               memory_order_acquire);
+                if (new_gen != my_gen ||
+                    !atomic_load_explicit(&g_pool.active,
+                                          memory_order_relaxed)) {
+                    pthread_mutex_unlock(&g_pool.sleep_mutex);
+                    if (!atomic_load_explicit(&g_pool.active,
+                                              memory_order_relaxed)
+                        && new_gen == my_gen) goto done;
+                    break;
+                }
+                pthread_cond_wait(&g_pool.sleep_cond,
+                                  &g_pool.sleep_mutex);
+                pthread_mutex_unlock(&g_pool.sleep_mutex);
+                spins = 0; /* restart spin after wakeup */
+            }
         }
-        if (!g_pool.active) {
-            pthread_mutex_unlock(&g_pool.mutex);
-            break;
-        }
-        /* Grab work item */
-        my_gen = g_pool.generation;
+
+        my_gen = new_gen;
+
+        /* Read work item (safe: master wrote before generation store) */
         void (*fn)(void *) = g_pool.fn;
         void *data = g_pool.data;
         int num_threads = g_pool.num_threads;
         DBG("worker %d: gen=%d, num_threads=%d", worker_id, my_gen, num_threads);
-        pthread_mutex_unlock(&g_pool.mutex);
 
         /* Only participate if our ID < team size */
         if (worker_id < num_threads) {
-            /* Set thread-local state */
             tl_thread_num = worker_id;
             tl_num_threads = num_threads;
             tl_in_parallel = true;
             tl_single_generation = 0;
+            tl_barrier_sense = 0; /* reset to match g_omp_barrier */
 
             /* Sync: all team members ready */
-            pthread_barrier_wait(&g_pool.start_barrier);
+            spin_barrier_wait(&g_pool.start_barrier, &start_sense);
 
             /* Execute */
             fn(data);
 
             /* End barrier */
-            pthread_barrier_wait(&g_pool.end_barrier);
+            spin_barrier_wait(&g_pool.end_barrier, &end_sense);
 
             tl_in_parallel = false;
 
-            /* Signal completion to master (only participating workers) */
-            pthread_mutex_lock(&g_pool.mutex);
-            g_pool.workers_done++;
-            pthread_cond_signal(&g_pool.work_done);
-            pthread_mutex_unlock(&g_pool.mutex);
+            /* Signal completion (atomic, no mutex) */
+            atomic_fetch_add_explicit(&g_pool.workers_done, 1,
+                                      memory_order_release);
         }
-        /* Non-participating workers just loop back and wait for next gen */
-        /* Loop back: will wait for generation to change */
     }
+done:
     return NULL;
 }
 
@@ -218,11 +271,11 @@ static void init_rts(void) {
 
     /* Initialize worker pool */
     g_pool_size = g_rts_num_caps - 1; /* workers are caps 1..N-1 */
-    pthread_mutex_init(&g_pool.mutex, NULL);
-    pthread_cond_init(&g_pool.work_available, NULL);
-    pthread_cond_init(&g_pool.work_done, NULL);
-    g_pool.active = true;
-    g_pool.generation = 0;
+    pthread_mutex_init(&g_pool.sleep_mutex, NULL);
+    pthread_cond_init(&g_pool.sleep_cond, NULL);
+    atomic_store(&g_pool.active, true);
+    atomic_store(&g_pool.generation, 0);
+    atomic_store(&g_pool.workers_done, 0);
 
     /* Pin master thread (thread 0) to Capability 0 */
     rts_setInCallCapability(0, 1);
@@ -257,10 +310,11 @@ static void shutdown_rts(void) {
     if (!g_rts_initialized) return;
 
     /* Signal all workers to exit */
-    pthread_mutex_lock(&g_pool.mutex);
-    g_pool.active = false;
-    pthread_cond_broadcast(&g_pool.work_available);
-    pthread_mutex_unlock(&g_pool.mutex);
+    atomic_store_explicit(&g_pool.active, false, memory_order_release);
+    /* Wake any workers sleeping on condvar */
+    pthread_mutex_lock(&g_pool.sleep_mutex);
+    pthread_cond_broadcast(&g_pool.sleep_cond);
+    pthread_mutex_unlock(&g_pool.sleep_mutex);
 
     for (int i = 0; i < g_pool_size; i++) {
         pthread_join(g_worker_threads[i], NULL);
@@ -295,10 +349,11 @@ void GOMP_parallel(void (*fn)(void *), void *data,
     tl_num_threads = nthreads;
     tl_in_parallel = true;
     tl_single_generation = 0;
+    tl_barrier_sense = 0; /* reset to match g_omp_barrier */
 
     /* Reset per-region state */
     g_single_generation = 0;
-    g_barrier_count = 0;
+    spin_barrier_init(&g_omp_barrier, nthreads);
 
     if (nthreads == 1) {
         /* Single-thread fast path: no pool interaction needed */
@@ -306,42 +361,42 @@ void GOMP_parallel(void (*fn)(void *), void *data,
         fn(data);
     } else {
         /* Multi-thread: use worker pool */
-        int num_workers = nthreads - 1; /* workers needed from pool */
+        int num_workers = nthreads - 1;
 
-        /* Initialize barriers for this team (master + workers) */
-        pthread_barrier_init(&g_pool.start_barrier, NULL, nthreads);
-        pthread_barrier_init(&g_pool.end_barrier, NULL, nthreads);
+        /* Initialize spin barriers for this team */
+        spin_barrier_init(&g_pool.start_barrier, nthreads);
+        spin_barrier_init(&g_pool.end_barrier, nthreads);
 
-        /* Post work to the pool by advancing generation */
-        pthread_mutex_lock(&g_pool.mutex);
+        /* Store work item, then advance generation (release fence) */
         g_pool.fn = fn;
         g_pool.data = data;
         g_pool.num_threads = nthreads;
-        g_pool.workers_done = 0;
-        g_pool.generation++;
-        pthread_cond_broadcast(&g_pool.work_available);
-        pthread_mutex_unlock(&g_pool.mutex);
+        atomic_store_explicit(&g_pool.workers_done, 0,
+                              memory_order_relaxed);
+        atomic_fetch_add_explicit(&g_pool.generation, 1,
+                                  memory_order_release);
 
-        DBG("GOMP_parallel: gen=%d, master entering start_barrier", g_pool.generation);
+        /* Wake any workers sleeping on condvar fallback */
+        pthread_mutex_lock(&g_pool.sleep_mutex);
+        pthread_cond_broadcast(&g_pool.sleep_cond);
+        pthread_mutex_unlock(&g_pool.sleep_mutex);
 
-        /* Sync with workers */
-        pthread_barrier_wait(&g_pool.start_barrier);
+        /* Master participates in barriers */
+        static __thread int master_start_sense = 0;
+        static __thread int master_end_sense = 0;
+
+        spin_barrier_wait(&g_pool.start_barrier, &master_start_sense);
 
         /* Execute */
         fn(data);
 
-        /* End barrier */
-        pthread_barrier_wait(&g_pool.end_barrier);
+        spin_barrier_wait(&g_pool.end_barrier, &master_end_sense);
 
-        /* Wait for all workers to signal done (so we can safely destroy barriers) */
-        pthread_mutex_lock(&g_pool.mutex);
-        while (g_pool.workers_done < num_workers) {
-            pthread_cond_wait(&g_pool.work_done, &g_pool.mutex);
+        /* Spin-wait for all workers to signal done */
+        while (atomic_load_explicit(&g_pool.workers_done,
+                                    memory_order_acquire) < num_workers) {
+            __builtin_ia32_pause();
         }
-        pthread_mutex_unlock(&g_pool.mutex);
-
-        pthread_barrier_destroy(&g_pool.start_barrier);
-        pthread_barrier_destroy(&g_pool.end_barrier);
     }
 
     /* Restore */
@@ -373,22 +428,8 @@ void GOMP_parallel_end(void) {
  * ========================================================================= */
 
 void GOMP_barrier(void) {
-    int nthreads = tl_num_threads;
-    if (nthreads <= 1) return;
-
-    pthread_mutex_lock(&g_barrier_mutex);
-    int gen = g_barrier_generation;
-    g_barrier_count++;
-    if (g_barrier_count >= nthreads) {
-        g_barrier_count = 0;
-        g_barrier_generation++;
-        pthread_cond_broadcast(&g_barrier_cond);
-    } else {
-        while (gen == g_barrier_generation) {
-            pthread_cond_wait(&g_barrier_cond, &g_barrier_mutex);
-        }
-    }
-    pthread_mutex_unlock(&g_barrier_mutex);
+    if (tl_num_threads <= 1) return;
+    spin_barrier_wait(&g_omp_barrier, &tl_barrier_sense);
 }
 
 /* =========================================================================
