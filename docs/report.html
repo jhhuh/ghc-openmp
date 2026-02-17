@@ -142,6 +142,7 @@
   <li><a href="#optimization">Optimization: Achieving Parity</a></li>
   <li><a href="#haskell-interop">Haskell Interop</a></li>
   <li><a href="#gc-interaction">Garbage Collection Interaction</a></li>
+  <li><a href="#bidirectional">Bidirectional Interop</a></li>
   <li><a href="#benchmarks">Benchmarks</a></li>
   <li><a href="#bugs">Notable Bugs and Fixes</a></li>
   <li><a href="#limitations">Limitations</a></li>
@@ -163,9 +164,10 @@ barriers, critical sections, tasks, and sections.</p>
 <p>After lock-free optimization, the runtime achieves <strong>performance parity
 with native libgomp</strong> on both microbenchmarks and real numerical workloads
 (dense matrix multiplication). Haskell programs call OpenMP-parallelized C code
-via FFI, with both runtimes sharing the same thread pool. GHC's stop-the-world
-garbage collector does not pause OpenMP workers because they do not hold
-Capabilities.</p>
+via FFI, with both runtimes sharing the same thread pool. OpenMP workers
+call back into Haskell via <code>FunPtr</code> with automatic Capability
+acquisition. GHC's stop-the-world garbage collector does not pause OpenMP
+workers because they do not hold Capabilities.</p>
 
 <!-- ================================================================ -->
 <h2 id="motivation">2. Motivation</h2>
@@ -366,7 +368,14 @@ with large memory footprint. Results: 3-6x speedup over sequential Haskell at
 <h3><span class="phase-label">Phase 8</span> Head-to-Head Comparison</h3>
 <p>The same DGEMM code compiled against native libgomp and our RTS-backed
 runtime. Identical checksums, indistinguishable performance. Details in
-<a href="#sec-dgemm">Section 9.2</a>.</p>
+<a href="#sec-dgemm">Section 10.2</a>.</p>
+
+<h3><span class="phase-label">Phase 9</span> Bidirectional Interop</h3>
+<p>OpenMP workers call back into Haskell via <code>FunPtr</code>. The
+<code>foreign import ccall "wrapper"</code> stub automatically handles
+Capability acquisition. All results verified correct; overhead is ~0.5us
+per callback (the <code>rts_lock/rts_unlock</code> round-trip). Details in
+<a href="#bidirectional">Section 9</a>.</p>
 
 <!-- ================================================================ -->
 <h2 id="optimization">6. Optimization: From 24x Slower to Parity</h2>
@@ -499,12 +508,88 @@ boundary.</p>
 <p>GHC RTS statistics: 99.7% productivity, GC time &lt;0.5% of elapsed.</p>
 
 <!-- ================================================================ -->
-<h2 id="benchmarks">9. Benchmarks</h2>
+<h2 id="bidirectional">9. Bidirectional Interop</h2>
+
+<p>Phases 4&ndash;7 demonstrated Haskell calling OpenMP. Phase 9 completes the
+picture: <strong>OpenMP workers calling back into Haskell</strong> from within
+a parallel region.</p>
+
+<h3>9.1 Mechanism</h3>
+
+<p>Haskell creates a <code>FunPtr</code> via
+<code>foreign import ccall "wrapper"</code>:</p>
+
+<pre><code>foreign import ccall "wrapper"
+    mkCallback :: (CInt -> IO CDouble)
+               -> IO (FunPtr (CInt -> IO CDouble))
+
+sinCb &lt;- mkCallback (\i -> return (sin (fromIntegral i * 0.001)))</code></pre>
+
+<p>GHC generates a C stub that wraps the Haskell closure with automatic
+Capability management:</p>
+
+<pre><code>// Generated wrapper (simplified):
+CDouble wrapper(CInt arg) {
+    Capability *cap = rts_lock();      // acquire Capability
+    // ... evaluate Haskell closure ...
+    rts_unlock(cap);                   // release Capability
+    return result;
+}</code></pre>
+
+<p>The C code calls this <code>FunPtr</code> from inside an OpenMP parallel for:</p>
+
+<pre><code>void parallel_reduce_callback(hs_callback_t callback, int n) {
+    double sum = 0.0;
+    #pragma omp parallel for reduction(+:sum) schedule(static)
+    for (int i = 0; i &lt; n; i++)
+        sum += callback(i);  // each worker calls into Haskell
+    return sum;
+}</code></pre>
+
+<h3>9.2 Correctness</h3>
+
+<p>All results verified against pure C and pure Haskell reference
+implementations:</p>
+
+<table>
+<tr><th>Test</th><th>Result</th><th>Status</th></tr>
+<tr><td>parallel_map (1000 sin values)</td><td>Element-wise match to 1e-10</td><td><span class="badge badge-ok">OK</span></td></tr>
+<tr><td>parallel_reduce (100K sin sum)</td><td>1839.343386 (matches pure C)</td><td><span class="badge badge-ok">OK</span></td></tr>
+<tr><td>polynomial callback (10K)</td><td>1109840.005000 (matches Haskell)</td><td><span class="badge badge-ok">OK</span></td></tr>
+</table>
+
+<h3>9.3 Performance</h3>
+
+<table>
+<tr><th>Threads</th><th>Pure C (ms)</th><th>Callback (ms)</th><th>Overhead</th><th>Per-callback</th></tr>
+<tr><td>1</td><td class="num">1.69</td><td class="num">46.60</td><td class="num">27.6x</td><td class="num">~0.47 us</td></tr>
+<tr><td>2</td><td class="num">1.17</td><td class="num">60.43</td><td class="num">51.8x</td><td class="num">~0.60 us</td></tr>
+<tr><td>4</td><td class="num">0.71</td><td class="num">57.91</td><td class="num">82.1x</td><td class="num">~0.58 us</td></tr>
+</table>
+
+<p>The per-callback cost of ~0.5us is the <code>rts_lock()/rts_unlock()</code>
+round-trip. This is constant regardless of what the Haskell function does.
+For callbacks that perform milliseconds of work (e.g., looking up a Haskell
+data structure, evaluating a complex expression), the overhead is negligible.
+For tight inner loops like 100K trivial sin() calls, pure C should be used
+instead.</p>
+
+<div class="highlight">
+<p><strong>Practical guideline</strong>: Use Haskell callbacks when each
+invocation does &ge;100us of work. Below that, the
+<code>rts_lock/unlock</code> overhead dominates. Structure code so that
+OpenMP handles the hot numerical loop in C, and calls Haskell for complex
+logic at coarser granularity.</p>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="benchmarks">10. Benchmarks</h2>
+<!-- section renumbered -->
 
 <p>All benchmarks on an Intel i7-10750H (6C/12T), NixOS, GCC 15.2, GHC 9.10.3,
 powersave governor. Best-of-N timing to reduce CPU frequency variance.</p>
 
-<h3>9.1 Microbenchmarks (Phase 3)</h3>
+<h3>10.1 Microbenchmarks (Phase 3)</h3>
 
 <h4>Fork/Join Overhead (us/iter)</h4>
 <table>
@@ -542,7 +627,7 @@ powersave governor. Best-of-N timing to reduce CPU frequency variance.</p>
 <tr><td>8</td><td class="num">2.135</td><td class="num">1.201</td><td><span class="badge badge-fast">1.8x faster</span></td></tr>
 </table>
 
-<h3 id="sec-dgemm">9.2 DGEMM Head-to-Head (Phase 8)</h3>
+<h3 id="sec-dgemm">10.2 DGEMM Head-to-Head (Phase 8)</h3>
 
 <p>Same naive triple-loop DGEMM compiled identically, linked against either
 native libgomp or our runtime. Checksums match exactly.</p>
@@ -567,7 +652,7 @@ CPU frequency noise, not runtime overhead.</p>
 <tr><td>4</td><td class="num">663.37</td><td class="num">3.24</td><td class="num">3.7x</td></tr>
 </table>
 
-<h3>9.3 Haskell FFI Scaling (Phase 4, parallel sinsum)</h3>
+<h3>10.3 Haskell FFI Scaling (Phase 4, parallel sinsum)</h3>
 
 <table>
 <tr><th>Threads</th><th>Time (ms)</th><th>Speedup</th></tr>
@@ -581,9 +666,9 @@ CPU frequency noise, not runtime overhead.</p>
 correctly parallelizes work dispatched from Haskell.</p>
 
 <!-- ================================================================ -->
-<h2 id="bugs">10. Notable Bugs and Fixes</h2>
+<h2 id="bugs">11. Notable Bugs and Fixes</h2>
 
-<h3>10.1 Barrier Sense Mismatch Deadlock</h3>
+<h3>11.1 Barrier Sense Mismatch Deadlock</h3>
 
 <p><strong>Symptom</strong>: Program hangs when calling <code>GOMP_parallel</code>
 from a <code>forkIO</code> thread at <code>-N4</code>. No output at all. Works
@@ -602,7 +687,7 @@ barrier's global sense to 0. On the next region:</p>
 <p><strong>Fix</strong>: Reset all local sense variables to 0 at the start of
 each parallel region, matching the freshly initialized barriers.</p>
 
-<h3>10.2 False Parallel-For Regression</h3>
+<h3>11.2 False Parallel-For Regression</h3>
 
 <p><strong>Symptom</strong>: At 4 threads, parallel for appeared 1.65x slower
 than native libgomp (6.7ms vs 4.1ms).</p>
@@ -615,7 +700,7 @@ varied between process invocations.</p>
 interleaved testing confirmed parity (3.85ms vs 3.91ms).</p>
 
 <!-- ================================================================ -->
-<h2 id="limitations">11. Limitations</h2>
+<h2 id="limitations">12. Limitations</h2>
 
 <table>
 <tr><th>Limitation</th><th>Impact</th><th>Notes</th></tr>
@@ -628,7 +713,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).</p>
 </table>
 
 <!-- ================================================================ -->
-<h2 id="conclusions">12. Conclusions</h2>
+<h2 id="conclusions">13. Conclusions</h2>
 
 <p>GHC's Runtime System can serve as a fully functional OpenMP runtime with
 <strong>zero measurable overhead</strong> compared to native libgomp. The
@@ -648,6 +733,10 @@ no GHC fork required.</p>
   <li><strong>Lock-free synchronization is essential</strong>: The naive
   mutex+condvar implementation was 20-25x slower. Sense-reversing barriers
   and atomic generation counters brought it to parity.</li>
+  <li><strong>Bidirectional FFI works</strong>: OpenMP workers call Haskell
+  functions via <code>FunPtr</code> with ~0.5us overhead per invocation
+  (automatic <code>rts_lock/unlock</code>), making it practical for
+  coarse-grained callbacks.</li>
 </ol>
 
 <p>This demonstrates that language runtimes can share threading infrastructure

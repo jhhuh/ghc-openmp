@@ -15,6 +15,8 @@ seamless interoperation between Haskell and OpenMP-parallelized C code.
   run simultaneously without starving each other
 - **GC isolation**: GHC's stop-the-world GC does not pause OpenMP workers
   (workers don't hold Capabilities)
+- **Bidirectional FFI**: OpenMP workers call back into Haskell via FunPtr,
+  with automatic Capability acquisition
 
 ## Architecture
 
@@ -64,6 +66,7 @@ make demo             # Phase 4: FFI interop
 make demo-concurrent  # Phase 5: concurrent Haskell + OpenMP
 make demo-gc          # Phase 6: GC stress test
 make demo-matmul      # Phase 7: dense matrix multiply
+make demo-callback    # Phase 9: bidirectional interop (OpenMP -> Haskell)
 
 # Run benchmarks
 make bench            # microbenchmarks: native vs RTS
@@ -99,6 +102,7 @@ src/
   HsConcurrent.hs           # Phase 5: concurrent Haskell + OpenMP
   HsGCStress.hs             # Phase 6: GC interaction test
   HsMatMul.hs               # Phase 7: dense matrix multiply
+  HsCallback.hs             # Phase 9: bidirectional interop (OpenMP -> Haskell)
   bench_overhead.c           # Microbenchmark suite
   bench_dgemm.c              # DGEMM benchmark (native vs RTS)
   test_omp_basic.c           # Basic OpenMP construct tests

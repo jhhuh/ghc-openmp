@@ -82,3 +82,9 @@ work confirmed.
 Created README.md and `docs/report.html` (research report). Set GitHub repo
 description and topics via `gh`. Enabled GitHub Pages. Added disclaimers about
 tentative results and Claude Code assistance.
+
+## 2026-02-17: Phase 9 — Bidirectional interop
+
+OpenMP workers call Haskell FunPtrs from within `#pragma omp parallel for`.
+GHC's `foreign import ccall "wrapper"` stubs handle `rts_lock()/rts_unlock()`
+automatically. Per-callback cost ~0.5us. Practical for coarse-grained callbacks.

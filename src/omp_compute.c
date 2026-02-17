@@ -69,6 +69,30 @@ void parallel_dgemm(const double *A, const double *B, double *C, int n) {
     }
 }
 
+/* ---- Bidirectional interop: OpenMP workers call Haskell callbacks ---- */
+
+/* Type for a Haskell callback: takes index, returns double */
+typedef double (*hs_callback_t)(int);
+
+/* Parallel map with Haskell callback: out[i] = callback(i)
+ * Each OpenMP thread calls back into Haskell for every element. */
+void parallel_map_callback(hs_callback_t callback, double *out, int n) {
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < n; i++) {
+        out[i] = callback(i);
+    }
+}
+
+/* Parallel reduce with Haskell callback: sum(callback(i) for i in 0..n-1) */
+double parallel_reduce_callback(hs_callback_t callback, int n) {
+    double sum = 0.0;
+    #pragma omp parallel for reduction(+:sum) schedule(static)
+    for (int i = 0; i < n; i++) {
+        sum += callback(i);
+    }
+    return sum;
+}
+
 /* Query runtime info */
 int get_omp_num_threads(void) {
     int n;

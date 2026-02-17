@@ -153,6 +153,18 @@ demo-matmul: build/matmul_demo
 	@echo "=== Dense Matrix Multiply Demo ==="
 	build/matmul_demo +RTS -N4
 
+# Phase 9: Bidirectional interop (OpenMP -> Haskell callbacks)
+build/callback_demo: src/HsCallback.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		src/HsCallback.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-outputdir build/hs_callback_out
+
+demo-callback: build/callback_demo
+	@echo "=== Bidirectional Interop Demo ==="
+	build/callback_demo +RTS -N4
+
 # ---- Benchmarks ----
 
 build/bench_native: src/bench_overhead.c
