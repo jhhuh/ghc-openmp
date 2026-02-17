@@ -50,3 +50,12 @@ Fixed with best-of-10 iterations. Interleaved testing confirmed no regression.
 `HsFFIDemo.hs` calls `c_parallel_sinsum` via `foreign import ccall safe`.
 Both share GHC Capabilities. Near-linear scaling (3.3x at 4 threads). Key
 insight: `hs_init_ghc()` is reference-counted, safe to call when RTS running.
+
+## 2026-02-17: Phase 5 — Concurrent Haskell + OpenMP
+
+Demonstrated `forkIO` threads running alongside OpenMP parallel regions.
+
+**Bug found**: Barrier sense mismatch when `GOMP_parallel` called from
+different OS threads (e.g., Haskell `forkIO`). Workers retain stale sense
+values from previous region on a different thread → fall through barrier
+immediately. Fix: reset all senses in `GOMP_parallel` before dispatching.

@@ -196,6 +196,8 @@ static void *worker_loop(void *arg) {
             tl_in_parallel = true;
             tl_single_generation = 0;
             tl_barrier_sense = 0; /* reset to match g_omp_barrier */
+            start_sense = 0; /* reset to match re-initialized start_barrier */
+            end_sense = 0;   /* reset to match re-initialized end_barrier */
 
             /* Sync: all team members ready */
             spin_barrier_wait(&g_pool.start_barrier, &start_sense);
@@ -381,9 +383,10 @@ void GOMP_parallel(void (*fn)(void *), void *data,
         pthread_cond_broadcast(&g_pool.sleep_cond);
         pthread_mutex_unlock(&g_pool.sleep_mutex);
 
-        /* Master participates in barriers */
-        static __thread int master_start_sense = 0;
-        static __thread int master_end_sense = 0;
+        /* Master barrier senses — always start at 0 to match freshly
+         * initialized barriers (sense=0). Not persistent across calls. */
+        int master_start_sense = 0;
+        int master_end_sense = 0;
 
         spin_barrier_wait(&g_pool.start_barrier, &master_start_sense);
 

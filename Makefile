@@ -113,9 +113,21 @@ build/hs_omp_demo: src/HsMain.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_omp
 
+# Phase 5: Concurrent Haskell + OpenMP
+build/hs_concurrent: src/HsConcurrent.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		src/HsConcurrent.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-outputdir build/hs_conc_out
+
 demo: build/hs_omp_demo
 	@echo "=== Haskell ↔ OpenMP Interop Demo ==="
 	build/hs_omp_demo +RTS -N4
+
+demo-concurrent: build/hs_concurrent
+	@echo "=== Concurrent Haskell + OpenMP Demo ==="
+	build/hs_concurrent +RTS -N4
 
 # ---- Benchmarks ----
 
