@@ -65,3 +65,8 @@ immediately. Fix: reset all senses in `GOMP_parallel` before dispatching.
 500 short OpenMP regions under GC pressure. Workers are plain OS threads without
 Capabilities → invisible to GHC's stop-the-world GC. Worst p99 impact ~1.17x.
 CPU frequency scaling dominates variance, not GC.
+
+## 2026-02-17: Phase 7 — Dense matrix multiply (DGEMM)
+
+Naive triple-loop DGEMM validates runtime on real workload. 4.4x speedup at
+N=1024 on 4 threads. Haskell reference used `peekElemOff`/`pokeElemOff`.

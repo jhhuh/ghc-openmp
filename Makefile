@@ -141,6 +141,18 @@ demo-gc: build/gc_stress
 	@echo "=== GC Interaction Stress Test ==="
 	build/gc_stress +RTS -N4 -s
 
+# Phase 7: Dense matrix multiply
+build/matmul_demo: src/HsMatMul.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		src/HsMatMul.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-outputdir build/hs_matmul_out
+
+demo-matmul: build/matmul_demo
+	@echo "=== Dense Matrix Multiply Demo ==="
+	build/matmul_demo +RTS -N4
+
 # ---- Benchmarks ----
 
 build/bench_native: src/bench_overhead.c

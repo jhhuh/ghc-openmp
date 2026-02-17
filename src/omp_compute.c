@@ -54,6 +54,21 @@ double repeated_parallel_sinsum(int n_per_iter, int iters, double *times_us) {
     return total;
 }
 
+/* Dense matrix multiply: C = A * B (row-major, NxN)
+ * Parallelizes over rows of C. */
+void parallel_dgemm(const double *A, const double *B, double *C, int n) {
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            double sum = 0.0;
+            for (int k = 0; k < n; k++) {
+                sum += A[i * n + k] * B[k * n + j];
+            }
+            C[i * n + j] = sum;
+        }
+    }
+}
+
 /* Query runtime info */
 int get_omp_num_threads(void) {
     int n;
