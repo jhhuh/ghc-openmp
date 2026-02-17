@@ -36,6 +36,24 @@ double parallel_sinsum(int n) {
     return sum;
 }
 
+/* Run many short OpenMP regions, record per-iteration timing.
+ * Returns max latency in microseconds. */
+double repeated_parallel_sinsum(int n_per_iter, int iters, double *times_us) {
+    double total = 0.0;
+    for (int r = 0; r < iters; r++) {
+        double t0 = omp_get_wtime();
+        double sum = 0.0;
+        #pragma omp parallel for reduction(+:sum) schedule(static)
+        for (int i = 0; i < n_per_iter; i++) {
+            sum += sin((double)i * 0.001);
+        }
+        double t1 = omp_get_wtime();
+        total += sum;
+        if (times_us) times_us[r] = (t1 - t0) * 1e6;
+    }
+    return total;
+}
+
 /* Query runtime info */
 int get_omp_num_threads(void) {
     int n;

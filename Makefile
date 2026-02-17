@@ -129,6 +129,18 @@ demo-concurrent: build/hs_concurrent
 	@echo "=== Concurrent Haskell + OpenMP Demo ==="
 	build/hs_concurrent +RTS -N4
 
+# Phase 6: GC interaction test
+build/gc_stress: src/HsGCStress.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		src/HsGCStress.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-outputdir build/hs_gc_out
+
+demo-gc: build/gc_stress
+	@echo "=== GC Interaction Stress Test ==="
+	build/gc_stress +RTS -N4 -s
+
 # ---- Benchmarks ----
 
 build/bench_native: src/bench_overhead.c

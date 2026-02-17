@@ -59,3 +59,9 @@ Demonstrated `forkIO` threads running alongside OpenMP parallel regions.
 different OS threads (e.g., Haskell `forkIO`). Workers retain stale sense
 values from previous region on a different thread → fall through barrier
 immediately. Fix: reset all senses in `GOMP_parallel` before dispatching.
+
+## 2026-02-17: Phase 6 — GC interaction
+
+500 short OpenMP regions under GC pressure. Workers are plain OS threads without
+Capabilities → invisible to GHC's stop-the-world GC. Worst p99 impact ~1.17x.
+CPU frequency scaling dominates variance, not GC.
