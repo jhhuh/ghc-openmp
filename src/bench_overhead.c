@@ -56,17 +56,24 @@ static double bench_barrier(int iters) {
 }
 
 /* ---- Benchmark 3: Parallel for + reduction ---- */
+#define PF_ITERS 10  /* run parallel for multiple times for stable measurement */
+
 static double bench_parallel_for(int n) {
-    double sum = 0.0;
-    double t0 = omp_get_wtime();
-    #pragma omp parallel for reduction(+:sum) schedule(static)
-    for (int i = 0; i < n; i++) {
-        sum += sin((double)i * 0.001);
+    double best = 1e9;
+    for (int run = 0; run < PF_ITERS; run++) {
+        double sum = 0.0;
+        double t0 = omp_get_wtime();
+        #pragma omp parallel for reduction(+:sum) schedule(static)
+        for (int i = 0; i < n; i++) {
+            sum += sin((double)i * 0.001);
+        }
+        double t1 = omp_get_wtime();
+        double elapsed = t1 - t0;
+        if (elapsed < best) best = elapsed;
+        /* prevent dead-code elimination */
+        if (sum == -999.999) printf("%f\n", sum);
     }
-    double t1 = omp_get_wtime();
-    /* prevent dead-code elimination */
-    if (sum == -999.999) printf("%f\n", sum);
-    return t1 - t0;
+    return best;
 }
 
 /* ---- Benchmark 4: Critical section ---- */

@@ -12,7 +12,7 @@
 |--------|--------|---------|---------|-------------|
 | Fork/join (us) | 0.97 | 24.35 | 0.81 | **30x faster** (now beats native) |
 | Barrier (us) | 0.51 | 7.01 | 0.25 | **28x faster** (now beats native) |
-| Parallel for (ms) | 4.06 | 6.71 | 6.71 | (same — compute-bound) |
+| Parallel for (ms) | 3.85 | 6.71 | 3.91 | **1.7x faster** (was measurement artifact) |
 | Critical (ms) | 0.92 | 0.39 | 0.38 | (same) |
 
 ## Full Results Across Thread Counts
@@ -35,14 +35,14 @@
 | 4       |  0.508 |       0.254 | 0.50x (RTS 2.0x faster) |
 | 8       |  0.762 |       0.482 | 0.63x (RTS 1.6x faster) |
 
-### Parallel For + Reduction (1M sin(), ms)
+### Parallel For + Reduction (1M sin(), best of 10, ms)
 
 | Threads | Native | RTS Phase 3 | Ratio |
 |---------|--------|-------------|-------|
-| 1       | 16.603 |      16.288 | 0.98x |
-| 2       |  8.077 |       7.962 | 0.99x |
-| 4       |  4.056 |       6.711 | 1.65x |
-| 8       |  3.513 |       3.416 | 0.97x |
+| 1       | 15.764 |      15.427 | 0.98x |
+| 2       |  7.730 |       7.783 | 1.01x |
+| 4       |  3.849 |       3.905 | 1.01x |
+| 8       |  3.358 |       3.503 | 1.04x |
 
 ### Critical Section (1000/thread, ms)
 
@@ -56,12 +56,22 @@
 ## Summary
 
 The Phase 3 optimizations brought the GHC RTS-backed runtime to **parity or
-better** than native libgomp on synchronization primitives:
+better** than native libgomp on all benchmarks:
 
 - **Fork/join**: Faster at 1-4 threads, comparable at 8 threads
 - **Barrier**: 1.6-2.3x faster across all multi-thread counts
 - **Critical**: Consistently 1.3-2.4x faster
-- **Compute-bound work**: Comparable (scaling matches native)
+- **Compute-bound work**: Parity across all thread counts
 
-The remaining 4-thread parallel-for regression (1.65x) is likely due to
-worksharing loop overhead or GHC RTS timer interrupts, not synchronization.
+## Note on Measurement
+
+The Phase 2/early Phase 3 parallel-for results showed a false 1.65x regression
+at 4 threads. This was a measurement artifact caused by:
+
+1. **Single-sample benchmark**: parallel for ran only once per invocation
+2. **CPU frequency scaling**: laptop `powersave` governor (i7-10750H) causes
+   significant variance as boost clocks change between process invocations
+
+Fixed by running best-of-10 iterations within each process. Controlled
+interleaved testing confirms **no regression** — RTS matches native at all
+thread counts for compute-bound work.

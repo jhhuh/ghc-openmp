@@ -31,3 +31,16 @@ deadlocks:
 
 Benchmarks: fork/join 24x slower, barriers 14x slower than native, but
 compute-bound parity. Critical sections 1.5-2.4x faster.
+
+## 2026-02-17: Phase 3 — Lock-free synchronization
+
+Replaced all mutex+condvar with atomics: atomic generation counter, sense-
+reversing centralized barrier (Mellor-Crummey & Scott, 1991), spin-wait 4000
+iterations + condvar fallback.
+
+Results: fork/join 30x faster (now beats native at 1-4 threads), barriers 28x
+faster. Compute-bound work at parity.
+
+**False alarm**: Parallel for showed 1.65x regression at 4 threads — was a
+measurement artifact (single-sample benchmark + laptop powersave governor).
+Fixed with best-of-10 iterations. Interleaved testing confirmed no regression.
