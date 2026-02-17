@@ -70,3 +70,9 @@ CPU frequency scaling dominates variance, not GC.
 
 Naive triple-loop DGEMM validates runtime on real workload. 4.4x speedup at
 N=1024 on 4 threads. Haskell reference used `peekElemOff`/`pokeElemOff`.
+
+## 2026-02-17: Phase 8 — DGEMM head-to-head
+
+Same C DGEMM kernel, native libgomp vs RTS-backed runtime. Identical checksums,
+overlapping performance distributions. Zero measurable overhead for compute-bound
+work confirmed.

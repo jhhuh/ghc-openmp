@@ -166,6 +166,28 @@ build/bench_rts: src/bench_overhead.c build/ghc_omp_runtime_rts.o build/HsStub.o
 		build/bench_overhead_rts.o build/ghc_omp_runtime_rts.o build/HsStub.o \
 		-o $@ -lpthread -lm
 
+# DGEMM benchmark — native vs RTS
+build/bench_dgemm_native: src/bench_dgemm.c
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -o $@ $< -lm
+
+build/bench_dgemm_rts: src/bench_dgemm.c build/ghc_omp_runtime_rts.o build/HsStub.o
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -c $< -o build/bench_dgemm_rts.o
+	$(GHC) -threaded -no-hs-main \
+		build/bench_dgemm_rts.o build/ghc_omp_runtime_rts.o build/HsStub.o \
+		-o $@ -lpthread -lm
+
+bench-dgemm: build/bench_dgemm_native build/bench_dgemm_rts
+	@for t in 1 2 4 8; do \
+		echo "=== $$t threads: Native libgomp ===" ; \
+		OMP_NUM_THREADS=$$t build/bench_dgemm_native ; \
+		echo "" ; \
+		echo "=== $$t threads: GHC RTS-backed ===" ; \
+		OMP_NUM_THREADS=$$t build/bench_dgemm_rts ; \
+		echo "" ; \
+	done
+
 bench: build/bench_native build/bench_rts
 	@echo "=== Native libgomp ==="
 	@OMP_NUM_THREADS=4 build/bench_native
