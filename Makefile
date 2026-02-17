@@ -53,6 +53,21 @@ build/test_rts_embed: src/test_rts_embed.c build/HsStub.o
 		build/test_rts_embed.o build/HsStub.o \
 		-o $@ -lpthread -lm
 
+# Compile RTS-backed runtime as object file (statically linked into test)
+build/ghc_omp_runtime_rts.o: src/ghc_omp_runtime_rts.c
+	@mkdir -p build
+	$(CC) -DTHREADED_RTS -I$(RTS_INCDIR) $(CFLAGS) \
+		-c $< -o $@
+
+# Test program with RTS-backed runtime (statically linked, like test_rts_embed)
+# Uses ghc as linker to resolve all Haskell RTS symbols
+build/test_omp_rts: src/test_omp_basic.c build/ghc_omp_runtime_rts.o build/HsStub.o
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -c $< -o build/test_omp_basic_rts.o
+	$(GHC) -threaded -no-hs-main \
+		build/test_omp_basic_rts.o build/ghc_omp_runtime_rts.o build/HsStub.o \
+		-o $@ -lpthread -lm
+
 # ---- Test targets ----
 
 test: test-ghcomp
@@ -75,7 +90,12 @@ test-rts-embed: build/test_rts_embed
 test-both: test-native test-ghcomp
 	@echo "=== Both tests passed ==="
 
-test-all: test-native test-ghcomp test-rts-embed
+test-rts: build/test_omp_rts
+	@echo "=== Running with GHC RTS-backed runtime ==="
+	OMP_NUM_THREADS=4 build/test_omp_rts
+	@echo ""
+
+test-all: test-native test-ghcomp test-rts-embed test-rts
 
 # Verify our library exports the right symbols
 check-symbols: build/libghcomp.so
