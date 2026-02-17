@@ -1,0 +1,170 @@
+# ghc-openmp: GHC's Runtime System as an OpenMP Runtime
+
+An experimental OpenMP runtime that uses GHC's Runtime System (RTS) as its
+thread pool and scheduler infrastructure. Standard OpenMP C code compiled with
+`gcc -fopenmp` runs on GHC Capabilities instead of libgomp's pthreads, enabling
+seamless interoperation between Haskell and OpenMP-parallelized C code.
+
+## Key Results
+
+- **Performance parity** with native libgomp across all benchmarks (fork/join,
+  barrier, parallel for, DGEMM)
+- **Haskell FFI interop**: Haskell programs call OpenMP C code via `foreign
+  import ccall safe`, with both running on the same thread pool
+- **Concurrent execution**: Haskell green threads and OpenMP parallel regions
+  run simultaneously without starving each other
+- **GC isolation**: GHC's stop-the-world GC does not pause OpenMP workers
+  (workers don't hold Capabilities)
+
+## Architecture
+
+```
+Haskell program (or C host)
+        |
+        | foreign import ccall safe / direct call
+        v
+C code with #pragma omp parallel for
+        |
+        | calls GOMP_parallel(fn, data, N, flags)
+        v
+ghc_omp_runtime_rts.c  (our OpenMP runtime)
+        |
+        | dispatches to worker pool
+        v
+GHC RTS Capabilities (OS threads)
+  Cap 0    Cap 1    Cap 2    Cap 3
+  (master) (worker) (worker) (worker)
+```
+
+OpenMP workers are permanent OS threads pinned to GHC Capabilities via
+`rts_setInCallCapability()`. After initialization, they do **not** hold
+Capabilities — they are plain OS threads spinning on atomic variables,
+invisible to GHC's garbage collector.
+
+## Quick Start
+
+### Prerequisites
+
+- [Nix](https://nixos.org/) with flakes enabled (provides GHC 9.10.3, GCC 15.2)
+
+### Build & Run
+
+```bash
+# Enter development environment
+nix develop
+
+# Build everything
+make all
+
+# Run tests
+make test-all
+
+# Run Haskell -> OpenMP interop demo
+make demo             # Phase 4: FFI interop
+make demo-concurrent  # Phase 5: concurrent Haskell + OpenMP
+make demo-gc          # Phase 6: GC stress test
+make demo-matmul      # Phase 7: dense matrix multiply
+
+# Run benchmarks
+make bench            # microbenchmarks: native vs RTS
+make bench-dgemm      # DGEMM: native vs RTS at 1/2/4/8 threads
+```
+
+### Manual Build (without Make)
+
+```bash
+# Compile the runtime
+gcc -DTHREADED_RTS -I$(ghc --print-libdir)/x86_64-linux-ghc-9.10.3/rts-1.0.2/include \
+    -Wall -O2 -c src/ghc_omp_runtime_rts.c -o build/ghc_omp_runtime_rts.o
+
+# Compile OpenMP C library
+gcc -fopenmp -Wall -O2 -c src/omp_compute.c -o build/omp_compute.o
+
+# Link Haskell driver
+ghc -threaded -O2 src/HsMain.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+    -o build/hs_omp_demo -lpthread -lm
+
+# Run with 4 GHC capabilities
+build/hs_omp_demo +RTS -N4
+```
+
+## Project Structure
+
+```
+src/
+  ghc_omp_runtime_rts.c   # The OpenMP runtime (RTS-backed, ~800 lines)
+  ghc_omp_runtime.c        # Phase 1 stub runtime (pthread-based, reference)
+  omp_compute.c             # OpenMP compute kernels (dot, saxpy, sinsum, dgemm)
+  HsMain.hs                 # Phase 4: Haskell FFI interop demo
+  HsConcurrent.hs           # Phase 5: concurrent Haskell + OpenMP
+  HsGCStress.hs             # Phase 6: GC interaction test
+  HsMatMul.hs               # Phase 7: dense matrix multiply
+  bench_overhead.c           # Microbenchmark suite
+  bench_dgemm.c              # DGEMM benchmark (native vs RTS)
+  test_omp_basic.c           # Basic OpenMP construct tests
+  test_rts_embed.c           # GHC RTS embedding test
+
+artifacts/                  # Research notes, plans, and benchmark results
+```
+
+## Implemented OpenMP Features
+
+| Feature | Status |
+|---------|--------|
+| `#pragma omp parallel` | Full |
+| `#pragma omp parallel for` (static, dynamic, guided) | Full |
+| `#pragma omp barrier` | Full (sense-reversing, lock-free) |
+| `#pragma omp critical` (named and unnamed) | Full |
+| `#pragma omp single` | Full |
+| `#pragma omp atomic` | Fallback mutex |
+| `#pragma omp task` / `taskwait` | Inline execution (not deferred) |
+| `#pragma omp sections` | Full |
+| `#pragma omp ordered` | Mutex-based |
+| `omp_*` user API (threads, locks, timing) | Full |
+| Nested parallelism | Not supported |
+| Target offloading | Not applicable |
+
+## Benchmark Results (4 threads, i7-10750H)
+
+### Microbenchmarks
+
+| Metric | Native libgomp | RTS-backed | Ratio |
+|--------|---------------|------------|-------|
+| Fork/join | 0.97 us | 0.81 us | **0.83x** (RTS faster) |
+| Barrier | 0.51 us | 0.25 us | **0.50x** (RTS faster) |
+| Parallel for (1M sin) | 3.85 ms | 3.91 ms | 1.01x (parity) |
+| Critical section | 0.92 ms | 0.38 ms | **0.42x** (RTS faster) |
+
+### DGEMM (dense matrix multiply)
+
+| N | Native (ms) | RTS (ms) | Ratio |
+|---|------------|---------|-------|
+| 512 | 77.5 | 77.0 | 0.99x |
+| 1024 | 748.8 | 663.4 | 0.89x |
+
+Performance is indistinguishable within measurement noise.
+
+## How It Works
+
+1. **RTS Boot**: On first `GOMP_parallel` call, `hs_init_ghc()` initializes
+   the GHC RTS (or increments its ref count if already running from Haskell).
+
+2. **Worker Pool**: N-1 OS threads are created and pinned to Capabilities
+   1..N-1. Each does `rts_lock(); rts_unlock();` once to register with the
+   RTS, then enters a spin-wait loop.
+
+3. **Parallel Region**: Master stores work item (function pointer + data),
+   increments an atomic generation counter. Workers detect the generation
+   change, participate in a sense-reversing start barrier, execute the
+   function, then hit the end barrier.
+
+4. **Synchronization**: Lock-free sense-reversing centralized barriers with
+   spin-wait (~4000 iterations) and condvar fallback for power efficiency.
+
+5. **Haskell Interop**: `foreign import ccall safe` releases the calling
+   Capability, so other Haskell green threads run while OpenMP executes.
+   Workers don't hold Capabilities, making them invisible to GC.
+
+## License
+
+Experimental research project.

@@ -76,3 +76,9 @@ N=1024 on 4 threads. Haskell reference used `peekElemOff`/`pokeElemOff`.
 Same C DGEMM kernel, native libgomp vs RTS-backed runtime. Identical checksums,
 overlapping performance distributions. Zero measurable overhead for compute-bound
 work confirmed.
+
+## 2026-02-17: Documentation
+
+Created README.md and `docs/report.html` (research report). Set GitHub repo
+description and topics via `gh`. Enabled GitHub Pages. Added disclaimers about
+tentative results and Claude Code assistance.
