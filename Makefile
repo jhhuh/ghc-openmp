@@ -95,7 +95,27 @@ test-rts: build/test_omp_rts
 	OMP_NUM_THREADS=4 build/test_omp_rts
 	@echo ""
 
-test-all: test-native test-ghcomp test-rts-embed test-rts
+test-all: test-native test-ghcomp test-rts-embed test-rts demo
+
+# ---- Phase 4: Haskell ↔ OpenMP Interop ----
+
+# Compile OpenMP compute library
+build/omp_compute.o: src/omp_compute.c
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -c $< -o $@
+
+# Haskell driver that calls OpenMP C via FFI
+# ghc provides main, links our runtime + the C compute library
+build/hs_omp_demo: src/HsMain.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		src/HsMain.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-outputdir build/hs_omp
+
+demo: build/hs_omp_demo
+	@echo "=== Haskell ↔ OpenMP Interop Demo ==="
+	build/hs_omp_demo +RTS -N4
 
 # ---- Benchmarks ----
 

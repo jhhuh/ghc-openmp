@@ -44,3 +44,9 @@ faster. Compute-bound work at parity.
 **False alarm**: Parallel for showed 1.65x regression at 4 threads — was a
 measurement artifact (single-sample benchmark + laptop powersave governor).
 Fixed with best-of-10 iterations. Interleaved testing confirmed no regression.
+
+## 2026-02-17: Phase 4 — Haskell calls OpenMP C via FFI
+
+`HsFFIDemo.hs` calls `c_parallel_sinsum` via `foreign import ccall safe`.
+Both share GHC Capabilities. Near-linear scaling (3.3x at 4 threads). Key
+insight: `hs_init_ghc()` is reference-counted, safe to call when RTS running.
