@@ -1,0 +1,3 @@
+title: "GHC's Runtime System as an OpenMP Runtime"
+description: "A feasibility study in replacing libgomp with GHC RTS Capabilities"
+theme: jekyll-theme-cayman
