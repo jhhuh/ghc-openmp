@@ -264,6 +264,19 @@ demo-zerocopy: build/zerocopy_demo
 	@echo "=== Zero-Copy FFI Demo ==="
 	build/zerocopy_demo +RTS -N4
 
+# Phase 17: Linear typed arrays
+build/linear_demo: src/HsLinearDemo.hs src/Data/Array/Linear.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		src/HsLinearDemo.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-isrc \
+		-outputdir build/hs_linear_out
+
+demo-linear: build/linear_demo
+	@echo "=== Linear Typed Arrays Demo ==="
+	build/linear_demo +RTS -N4
+
 # ---- Benchmarks ----
 
 build/bench_native: src/bench_overhead.c

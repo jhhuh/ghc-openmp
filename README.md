@@ -80,6 +80,7 @@ make demo-parcompare  # Phase 14: GHC forkIO vs OpenMP
 make demo-tasks       # Phase 15: deferred task execution
 make test-tasks       # Phase 15: native vs RTS task comparison
 make demo-zerocopy    # Phase 16: zero-copy FFI with pinned ByteArray
+make demo-linear      # Phase 17: linear typed arrays (type-safe parallel access)
 
 # Run benchmarks
 make bench            # microbenchmarks: native vs RTS
@@ -126,6 +127,8 @@ src/
   HsTaskDemo.hs               # Phase 15: deferred task execution benchmark
   test_omp_tasks.c            # Phase 15: C-level task correctness/perf test
   HsZeroCopy.hs               # Phase 16: zero-copy FFI with pinned ByteArray
+  Data/Array/Linear.hs        # Phase 17: linear typed array module (~200 lines)
+  HsLinearDemo.hs             # Phase 17: type-safe parallel sub-array demo
   bench_overhead.c           # Microbenchmark suite
   bench_dgemm.c              # DGEMM benchmark (native vs RTS)
   test_omp_basic.c           # Basic OpenMP construct tests

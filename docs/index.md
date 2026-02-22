@@ -29,11 +29,12 @@ title: "GHC's Runtime System as an OpenMP Runtime"
 11. [Batched Safe Calls via Cmm](#11-batched-safe-calls-via-cmm)
 12. [Deferred Task Execution](#12-deferred-task-execution)
 13. [Zero-Copy FFI with Pinned ByteArray](#13-zero-copy-ffi-with-pinned-bytearray)
-14. [Benchmarks](#14-benchmarks)
-15. [Notable Bugs and Fixes](#15-notable-bugs-and-fixes)
-16. [Limitations](#16-limitations)
-17. [Conclusions](#17-conclusions)
-18. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
+14. [Linear Typed Arrays](#14-linear-typed-arrays)
+15. [Benchmarks](#15-benchmarks)
+16. [Notable Bugs and Fixes](#16-notable-bugs-and-fixes)
+17. [Limitations](#17-limitations)
+18. [Conclusions](#18-conclusions)
+19. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
 
 ---
 
@@ -353,6 +354,16 @@ Eliminates boxing overhead at the Haskell↔OpenMP boundary. Uses pinned
 `allocaArray`/`peekElemOff`/`pokeElemOff`. Data passes to C via
 `mutableByteArrayContents#` — zero marshalling. DGEMM inner loop 19% faster
 at N=512. Details in [Section 13](#13-zero-copy-ffi-with-pinned-bytearray).
+
+**Phase 17 — Linear Typed Arrays**
+
+Builds on Phase 16's pinned ByteArray with linear types (`-XLinearTypes`) to
+enforce disjoint ownership at compile time. A self-contained ~200-line module
+(`Data.Array.Linear`) provides `RW s` tokens for exclusive access and
+zero-copy `split`/`combine` for partitioning arrays into disjoint regions.
+Demonstrates type-safe row-partitioned DGEMM where each half of the output
+matrix is computed independently — the type system statically prevents
+aliased writes. Details in [Section 14](#14-linear-typed-arrays).
 
 ---
 
@@ -779,7 +790,80 @@ O(n³) inner loop. `-ddump-simpl` confirms the hot loop uses `+##`, `*##`, and
 
 ---
 
-## 14. Benchmarks
+## 14. Linear Typed Arrays
+
+Phase 17 uses GHC's `-XLinearTypes` extension to enforce exclusive ownership
+of mutable array regions at compile time. The core idea: linearity is on
+*tokens* (`RW s`), not the array itself. You need the right token to
+read/write, and `split`/`combine` tracks disjoint ownership at the type level.
+
+### 14.1 Design
+
+```haskell
+-- Linear token: proves exclusive access to region s
+data RW s where MkRW :: RW s
+
+-- Array with phantom region (NOT linear — tokens enforce access)
+data DArray s = DArray !Int !(MutableByteArray# RealWorld) !Int  -- len, buf, offset
+
+-- Split witness: proves l and r came from splitting s
+data SlicesTo s l r where MkSlicesTo :: SlicesTo s l r
+
+-- Operations consume and return tokens
+unsafeRead  :: RW s %1 -> DArray s -> Int -> (Double, RW s)
+unsafeWrite :: RW s %1 -> DArray s -> Int -> Double -> RW s
+split       :: RW s %1 -> Int -> DArray s -> Slice s
+combine     :: SlicesTo s l r %1 -> RW l %1 -> RW r %1 -> RW s
+```
+
+The `split` operation is zero-copy — both halves share the same underlying
+`MutableByteArray#`, just with different offset/length views. No allocation,
+no copying, just arithmetic on the offset field.
+
+### 14.2 Type-Safe Row-Partitioned DGEMM
+
+```haskell
+case split rwC (half * n) arrC of
+    MkSlice st rwTop rwBot cTop cBot ->
+        let rwTop' = linearDgemm rwTop n 0    half arrA arrB cTop
+            rwBot' = linearDgemm rwBot n half half arrA arrB cBot
+            rwC'   = combine st rwTop' rwBot'
+        in  unsafeRead rwC' arrC 0  -- can only read after recombining
+```
+
+This is the Haskell-side type encoding of what OpenMP does at runtime with
+`#pragma omp parallel for schedule(static)` — partitioning the output matrix
+into disjoint row blocks. The type system statically guarantees:
+
+1. No two computations can write to the same rows
+2. The original array cannot be accessed while split
+3. All slices must be recombined before reading results
+
+### 14.3 C FFI Integration
+
+The `unsafeWithPtr` function passes pinned ByteArray data directly to C:
+
+```haskell
+unsafeWithPtr :: DArray s -> (Ptr CDouble -> IO a) -> IO a
+```
+
+This threads through IO properly (unlike `runRW#`-based approaches that
+create independent state threads), ensuring C side effects are visible to
+subsequent Haskell reads.
+
+### 14.4 Implementation Notes
+
+- **`unsafeDupablePerformIO` over `runRW#`**: Element access uses
+  `unsafeDupablePerformIO` with `{-# NOINLINE #-}` to ensure writes from one
+  operation are visible to subsequent reads. `runRW#` creates independent state
+  threads that GHC can reorder under `-O2`.
+- **Bang patterns for sequencing**: In lazy contexts, token-producing
+  operations must be forced with `!` to ensure their side effects execute.
+- **Self-contained**: ~200 lines, no dependencies beyond `base` and `ghc-prim`.
+
+---
+
+## 15. Benchmarks
 
 All benchmarks on an Intel i7-10750H (6C/12T), NixOS, GCC 15.2, GHC 9.10.3,
 powersave governor. Best-of-N timing to reduce CPU frequency variance.
@@ -896,7 +980,7 @@ both achieve near-ideal scaling on 4 threads.
 
 ---
 
-## 15. Notable Bugs and Fixes
+## 16. Notable Bugs and Fixes
 
 ### 12.1 Barrier Sense Mismatch Deadlock
 
@@ -929,7 +1013,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 16. Limitations
+## 17. Limitations
 
 | Limitation | Impact | Notes |
 |---|---|---|
@@ -942,7 +1026,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 17. Conclusions
+## 18. Conclusions
 
 GHC's Runtime System can serve as a fully functional OpenMP runtime with
 **zero measurable overhead** compared to native libgomp. The

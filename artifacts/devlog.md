@@ -141,3 +141,16 @@ Inner loop 19% faster at N=512. Verified via `-ddump-simpl`.
 
 **Gotcha**: `forM_ [0..n-1]` allocates a list — GHC doesn't always fuse it.
 Replaced with manual `go` loop.
+
+## 2026-02-23: Phase 17 — Linear typed arrays
+
+Self-contained `Data.Array.Linear` (~200 lines) inspired by
+`konn/linear-extra` Borrowable SArray. `RW s` linear tokens + zero-copy
+`split`/`combine` via offset arithmetic. Tiled DGEMM demo.
+
+**Bugs**:
+1. `runRW#` creates independent state threads → writes not sequenced.
+   Fix: `unsafeDupablePerformIO`.
+2. Underscore-prefixed `let` bindings lazy → fills never execute. Fix: `seq`.
+3. `withPtr` via `runRW#` doesn't propagate C side effects.
+   Fix: `unsafeWithPtr` in IO.
