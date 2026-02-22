@@ -72,6 +72,7 @@ make demo-concurrent  # Phase 5: concurrent Haskell + OpenMP
 make demo-gc          # Phase 6: GC stress test
 make demo-matmul      # Phase 7: dense matrix multiply
 make demo-callback    # Phase 9: bidirectional interop (OpenMP -> Haskell)
+make demo-cmm         # Phase 10: Cmm primitives calling convention benchmark
 
 # Run benchmarks
 make bench            # microbenchmarks: native vs RTS
@@ -108,6 +109,8 @@ src/
   HsGCStress.hs             # Phase 6: GC interaction test
   HsMatMul.hs               # Phase 7: dense matrix multiply
   HsCallback.hs             # Phase 9: bidirectional interop (OpenMP -> Haskell)
+  omp_prims.cmm              # Phase 10: Cmm primitives (zero-overhead RTS access)
+  HsCmmDemo.hs               # Phase 10: calling convention benchmark
   bench_overhead.c           # Microbenchmark suite
   bench_dgemm.c              # DGEMM benchmark (native vs RTS)
   test_omp_basic.c           # Basic OpenMP construct tests

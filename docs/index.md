@@ -25,11 +25,12 @@ title: "GHC's Runtime System as an OpenMP Runtime"
 7. [Haskell Interop](#7-haskell-interop)
 8. [Garbage Collection Interaction](#8-garbage-collection-interaction)
 9. [Bidirectional Interop](#9-bidirectional-interop)
-10. [Benchmarks](#10-benchmarks)
-11. [Notable Bugs and Fixes](#11-notable-bugs-and-fixes)
-12. [Limitations](#12-limitations)
-13. [Conclusions](#13-conclusions)
-14. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
+10. [Cmm Primitives](#10-cmm-primitives)
+11. [Benchmarks](#11-benchmarks)
+12. [Notable Bugs and Fixes](#12-notable-bugs-and-fixes)
+13. [Limitations](#13-limitations)
+14. [Conclusions](#14-conclusions)
+15. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
 
 ---
 
@@ -258,7 +259,7 @@ with large memory footprint. Results: 3–6x speedup over sequential Haskell at
 
 The same DGEMM code compiled against native libgomp and our RTS-backed
 runtime. Identical checksums, indistinguishable performance. Details in
-[Section 10.2](#102-dgemm-head-to-head-phase-8).
+[Section 11.2](#112-dgemm-head-to-head-phase-8).
 
 **Phase 9 — Bidirectional Interop**
 
@@ -267,6 +268,15 @@ OpenMP workers call back into Haskell via `FunPtr`. The
 Capability acquisition. All results verified correct; overhead is ~0.5us
 per callback (the `rts_lock/rts_unlock` round-trip). Details in
 [Section 9](#9-bidirectional-interop).
+
+**Phase 10 — Cmm Primitives**
+
+Uses GHC's Cmm intermediate representation to write primitives callable via
+`foreign import prim` — the fastest possible calling convention.
+Benchmarks the three FFI tiers: prim (~0ns, optimized away by GHC),
+unsafe (~2ns), safe (~68ns). The 29x safe/unsafe ratio quantifies the
+exact cost of Capability release/reacquire per call.
+Details in [Section 10](#10-cmm-primitives).
 
 ---
 
@@ -485,12 +495,63 @@ instead.
 
 ---
 
-## 10. Benchmarks
+## 10. Cmm Primitives
+
+GHC provides three calling conventions for foreign code, each with different
+overhead. We wrote a Cmm primitive that reads `Capability_no(MyCapability())`
+— the same value as `omp_get_thread_num()` — and benchmarked all three tiers.
+
+### 10.1 The Cmm Primitive
+
+```cmm
+#include "Cmm.h"
+
+omp_prim_cap_no(W_ dummy) {
+    return (Capability_no(MyCapability()));
+}
+```
+
+Called from Haskell via:
+
+```haskell
+foreign import prim "omp_prim_cap_no" primCapNo# :: Int# -> Int#
+```
+
+### 10.2 Calling Convention Overhead
+
+| Convention | ns/call | Relative | Mechanism |
+|---|---|---|---|
+| `foreign import prim` (Cmm) | ~0 | — | Direct register read, GHC optimizes away |
+| `foreign import ccall unsafe` | 2.3 | — | Save/restore STG registers |
+| `foreign import ccall safe` | 67.5 | 29x vs unsafe | + suspendThread/resumeThread |
+
+### 10.3 Key Findings
+
+**Prim calls are truly free**: GHC treats `foreign import prim` functions as
+pure expressions. The Cmm function compiles to a single memory load from
+`BaseReg`, which GHC can hoist out of loops entirely via LICM (loop-invariant
+code motion). In a tight loop, 100M prim calls complete in <1ms.
+
+**The safe FFI tax is ~65ns**: Each `foreign import ccall safe` call costs ~65ns
+more than `unsafe` — the price of `suspendThread()`/`resumeThread()` which
+release and reacquire the Capability. For OpenMP regions doing >1us of work,
+this is negligible (<7%).
+
+**The callback overhead gap**: Phase 9's ~500ns per callback overhead is ~7x
+larger than the raw safe FFI cost (~68ns). The difference comes from
+`rts_lock()/rts_unlock()` performing additional work beyond
+`suspendThread()/resumeThread()`: Task structure allocation, global Capability
+search, and lock acquisition. A Cmm-level fast path could potentially reduce
+this.
+
+---
+
+## 11. Benchmarks
 
 All benchmarks on an Intel i7-10750H (6C/12T), NixOS, GCC 15.2, GHC 9.10.3,
 powersave governor. Best-of-N timing to reduce CPU frequency variance.
 
-### 10.1 Microbenchmarks (Phase 3)
+### 11.1 Microbenchmarks (Phase 3)
 
 #### Fork/Join Overhead (us/iter)
 
@@ -528,7 +589,7 @@ powersave governor. Best-of-N timing to reduce CPU frequency variance.
 | 4 | 0.915 | 0.381 | 2.4x faster |
 | 8 | 2.135 | 1.201 | 1.8x faster |
 
-### 10.2 DGEMM Head-to-Head (Phase 8)
+### 11.2 DGEMM Head-to-Head (Phase 8)
 
 Same naive triple-loop DGEMM compiled identically, linked against either
 native libgomp or our runtime. Checksums match exactly.
@@ -553,7 +614,7 @@ CPU frequency noise, not runtime overhead.
 | 2 | 1330.19 | 1.61 | 1.8x |
 | 4 | 663.37 | 3.24 | 3.7x |
 
-### 10.3 Haskell FFI Scaling (Phase 4, parallel sinsum)
+### 11.3 Haskell FFI Scaling (Phase 4, parallel sinsum)
 
 | Threads | Time (ms) | Speedup |
 |---|---|---|
@@ -567,9 +628,9 @@ correctly parallelizes work dispatched from Haskell.
 
 ---
 
-## 11. Notable Bugs and Fixes
+## 12. Notable Bugs and Fixes
 
-### 11.1 Barrier Sense Mismatch Deadlock
+### 12.1 Barrier Sense Mismatch Deadlock
 
 **Symptom**: Program hangs when calling `GOMP_parallel`
 from a `forkIO` thread at `-N4`. No output at all. Works
@@ -586,7 +647,7 @@ barrier's global sense to 0. On the next region:
 **Fix**: Reset all local sense variables to 0 at the start of
 each parallel region, matching the freshly initialized barriers.
 
-### 11.2 False Parallel-For Regression
+### 12.2 False Parallel-For Regression
 
 **Symptom**: At 4 threads, parallel for appeared 1.65x slower
 than native libgomp (6.7ms vs 4.1ms).
@@ -600,7 +661,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 12. Limitations
+## 13. Limitations
 
 | Limitation | Impact | Notes |
 |---|---|---|
@@ -613,7 +674,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 13. Conclusions
+## 14. Conclusions
 
 GHC's Runtime System can serve as a fully functional OpenMP runtime with
 **zero measurable overhead** compared to native libgomp. The

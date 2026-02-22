@@ -1,0 +1,15 @@
+#include "Cmm.h"
+
+/*
+ * Phase 10: Cmm primitives for direct RTS access from Haskell.
+ *
+ * These use foreign import prim (GHC's STG calling convention),
+ * bypassing all FFI overhead. Arguments and results pass in
+ * STG registers directly.
+ */
+
+/* Read current Capability number — equivalent to omp_get_thread_num()
+ * but with zero FFI overhead. Reads cap->no from BaseReg. */
+omp_prim_cap_no(W_ dummy) {
+    return (Capability_no(MyCapability()));
+}

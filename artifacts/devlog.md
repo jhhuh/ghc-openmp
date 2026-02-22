@@ -88,3 +88,10 @@ tentative results and Claude Code assistance.
 OpenMP workers call Haskell FunPtrs from within `#pragma omp parallel for`.
 GHC's `foreign import ccall "wrapper"` stubs handle `rts_lock()/rts_unlock()`
 automatically. Per-callback cost ~0.5us. Practical for coarse-grained callbacks.
+
+## 2026-02-22: Phase 10 — Cmm primitives benchmark
+
+Wrote `omp_prims.cmm` — single memory load from `BaseReg` for Capability
+number. Results: prim ~0ns (optimized away by GHC), unsafe FFI ~2.3ns, safe FFI
+~67ns (29x ratio). Prim being pure means GHC does LICM; needed data-dependent
+loop to measure.

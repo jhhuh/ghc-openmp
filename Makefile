@@ -165,6 +165,22 @@ demo-callback: build/callback_demo
 	@echo "=== Bidirectional Interop Demo ==="
 	build/callback_demo +RTS -N4
 
+# Phase 10: Cmm primitives
+build/omp_prims.o: src/omp_prims.cmm
+	@mkdir -p build
+	$(GHC) -c -x cmm $< -o $@
+
+build/cmm_demo: src/HsCmmDemo.hs build/omp_prims.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		src/HsCmmDemo.hs build/omp_prims.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-outputdir build/hs_cmm_out
+
+demo-cmm: build/cmm_demo
+	@echo "=== Cmm Primitives Demo ==="
+	build/cmm_demo +RTS -N4
+
 # ---- Benchmarks ----
 
 build/bench_native: src/bench_overhead.c
