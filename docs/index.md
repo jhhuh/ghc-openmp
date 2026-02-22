@@ -158,6 +158,7 @@ that `inline-cmm` automates.
 <pre class="mermaid">
 flowchart TD
     subgraph Host["Host Program"]
+        direction LR
         HS["Haskell program<br/>(ghc -threaded)"]
         CP["C program<br/>(gcc -fopenmp)"]
     end
@@ -166,14 +167,15 @@ flowchart TD
     CP -->|"calls<br/>GOMP_parallel()"| RT
 
     subgraph RT["ghc_omp_runtime_rts.c"]
-        direction TB
-        E["1. ensure_rts() — boot GHC RTS if needed"]
-        D["2. Store fn/data, bump atomic generation"]
-        W["3. Wake workers (condvar broadcast)"]
-        SB["4. Start barrier — all threads sync"]
-        FN["5. fn(data) on all threads"]
-        EB["6. End barrier — all threads sync"]
-        E --> D --> W --> SB --> FN --> EB
+        subgraph r1[" "]
+            direction LR
+            E["1. ensure_rts()"] --> D["2. Store fn/data"] --> W["3. Wake workers"]
+        end
+        subgraph r2[" "]
+            direction RL
+            SB["4. Start barrier"] --> FN["5. fn(data)"] --> EB["6. End barrier"]
+        end
+        W --> SB
     end
 
     RT --> RTS
@@ -189,6 +191,8 @@ flowchart TD
     style Host fill:#f9f9f9,stroke:#999
     style RT fill:#e8f4e8,stroke:#4a4
     style RTS fill:#e8e8f4,stroke:#44a
+    style r1 fill:none,stroke:none
+    style r2 fill:none,stroke:none
 </pre>
 
 *Figure 1: Runtime architecture. Workers are plain OS threads pinned to
