@@ -26,11 +26,12 @@ title: "GHC's Runtime System as an OpenMP Runtime"
 8. [Garbage Collection Interaction](#8-garbage-collection-interaction)
 9. [Bidirectional Interop](#9-bidirectional-interop)
 10. [Cmm Primitives](#10-cmm-primitives)
-11. [Benchmarks](#11-benchmarks)
-12. [Notable Bugs and Fixes](#12-notable-bugs-and-fixes)
-13. [Limitations](#13-limitations)
-14. [Conclusions](#14-conclusions)
-15. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
+11. [Batched Safe Calls via Cmm](#11-batched-safe-calls-via-cmm)
+12. [Benchmarks](#12-benchmarks)
+13. [Notable Bugs and Fixes](#13-notable-bugs-and-fixes)
+14. [Limitations](#14-limitations)
+15. [Conclusions](#15-conclusions)
+16. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
 
 ---
 
@@ -583,7 +584,87 @@ this.
 
 ---
 
-## 11. Benchmarks
+## 11. Batched Safe Calls via Cmm
+
+The safe FFI tax of ~68ns per call comes from `suspendThread()`/`resumeThread()`,
+which release and reacquire the Capability. For workloads that make many short
+C calls, this overhead dominates.
+
+By writing the suspend/resume manually in Cmm, we can batch N C calls within
+a single Capability release/reacquire cycle, amortizing the ~68ns overhead
+across all N calls.
+
+### 11.1 The Batching Primitive
+
+```cmm
+#include "Cmm.h"
+
+cmm_batched_tid(W_ n) {
+    W_ tok; W_ result; W_ new_base; W_ stack;
+    W_ i; W_ t;
+
+    /* Save Sp to TSO — GC needs valid stack pointer */
+    stack = StgTSO_stackobj(CurrentTSO);
+    StgStack_sp(stack) = Sp;
+
+    (tok) = ccall suspendThread(BaseReg "ptr", 0);
+
+    result = 0; i = 0;
+    goto loop_check;
+loop_body:
+    (t) = ccall omp_get_thread_num();
+    result = result + t;
+    i = i + 1;
+loop_check:
+    if (i < n) goto loop_body;
+
+    (new_base) = ccall resumeThread(tok);
+    BaseReg = new_base;
+
+    /* Restore Sp — GC may have moved the stack */
+    stack = StgTSO_stackobj(CurrentTSO);
+    Sp = StgStack_sp(stack);
+
+    return (result);
+}
+```
+
+### 11.2 Implementation Details
+
+Three details were critical for correctness:
+
+1. **Save/restore Sp**: `suspendThread` releases the Capability, allowing GC to
+   run. The GC needs a valid `Sp` in the TSO to scan the suspended thread's
+   stack. Without this, the GC follows a stale stack pointer and crashes.
+
+2. **No `"ptr"` on tok**: The token from `suspendThread` is `void*`, not a
+   GC-traceable pointer. Annotating it as `"ptr"` would tell GHC's Cmm compiler
+   to treat it as a GC root, causing the GC to follow a non-heap pointer.
+
+3. **State# threading**: `foreign import prim` is pure by default — GHC can
+   CSE or hoist the call. Threading `State# RealWorld` through the type
+   signature makes GHC treat it as effectful while adding zero runtime cost
+   (State# is erased at the Cmm level).
+
+### 11.3 Results
+
+| Batch size | Standard safe | Cmm batched | Speedup |
+|---|---|---|---|
+| 1 | 72.4 ns | 69.1 ns | 1.0x |
+| 2 | 71.3 ns | 36.1 ns | 2.0x |
+| 5 | 73.0 ns | 15.2 ns | 4.8x |
+| 10 | 71.0 ns | 8.7 ns | 8.2x |
+| 20 | 71.1 ns | 5.3 ns | 13.5x |
+| 50 | 71.7 ns | 3.4 ns | 21.1x |
+| 100 | 71.4 ns | 2.7 ns | 26.8x |
+
+At batch=100, per-call overhead drops to 2.7 ns — within 35% of unsafe FFI
+cost (~2 ns). The results match the theoretical prediction `(68 + N × 2) / N`
+closely at every batch size.
+
+---
+
+## 12. Benchmarks
 
 All benchmarks on an Intel i7-10750H (6C/12T), NixOS, GCC 15.2, GHC 9.10.3,
 powersave governor. Best-of-N timing to reduce CPU frequency variance.
@@ -665,7 +746,7 @@ correctly parallelizes work dispatched from Haskell.
 
 ---
 
-## 12. Notable Bugs and Fixes
+## 13. Notable Bugs and Fixes
 
 ### 12.1 Barrier Sense Mismatch Deadlock
 
@@ -698,7 +779,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 13. Limitations
+## 14. Limitations
 
 | Limitation | Impact | Notes |
 |---|---|---|
@@ -711,7 +792,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 14. Conclusions
+## 15. Conclusions
 
 GHC's Runtime System can serve as a fully functional OpenMP runtime with
 **zero measurable overhead** compared to native libgomp. The

@@ -74,6 +74,7 @@ make demo-matmul      # Phase 7: dense matrix multiply
 make demo-callback    # Phase 9: bidirectional interop (OpenMP -> Haskell)
 make demo-cmm         # Phase 10: Cmm primitives calling convention benchmark
 cabal run inline-cmm-demo -- +RTS -N4  # Phase 11: inline-cmm quasiquoter
+make demo-batch       # Phase 12: batched safe calls (27x overhead reduction)
 
 # Run benchmarks
 make bench            # microbenchmarks: native vs RTS
@@ -113,6 +114,8 @@ src/
   omp_prims.cmm              # Phase 10: Cmm primitives (zero-overhead RTS access)
   HsCmmDemo.hs               # Phase 10: calling convention benchmark
   HsInlineCmm.hs             # Phase 11: inline-cmm quasiquoter demo
+  omp_batch.cmm               # Phase 12: batched safe calls (manual suspend/resume)
+  HsCmmBatch.hs               # Phase 12: batch overhead benchmark
   bench_overhead.c           # Microbenchmark suite
   bench_dgemm.c              # DGEMM benchmark (native vs RTS)
   test_omp_basic.c           # Basic OpenMP construct tests
@@ -214,6 +217,20 @@ Cmm to an object file via Template Haskell.
 | `foreign import prim` (Cmm) | ~0 | GHC can optimize away (LICM, CSE) |
 | `foreign import ccall unsafe` | ~2 | STG register save/restore |
 | `foreign import ccall safe` | ~68 | + Capability release/reacquire |
+
+### Batched Safe Calls
+
+Phase 12 shows that the ~68ns safe FFI overhead can be amortized by batching
+multiple C calls within a single `suspendThread`/`resumeThread` cycle, written
+manually in Cmm:
+
+| Batch size | Per-call cost | Speedup vs safe |
+|---|---|---|
+| 1 | 69 ns | 1.0x |
+| 10 | 8.7 ns | 8.2x |
+| 100 | 2.7 ns | 27x |
+
+At batch=100, per-call overhead approaches unsafe FFI cost (~2 ns).
 
 ## License
 
