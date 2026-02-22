@@ -393,6 +393,10 @@ fell asleep after 4000 spin iterations.
 
 ### 6.2 Sense-Reversing Barrier
 
+The sense-reversing centralized barrier follows Mellor-Crummey & Scott's
+algorithm (*"Algorithms for Scalable Synchronization on Shared-Memory
+Multiprocessors"*, ACM TOCS 9(1), 1991):
+
 ```c
 void spin_barrier_wait(spin_barrier_t *b, int *local_sense) {
     *local_sense = 1 - *local_sense;

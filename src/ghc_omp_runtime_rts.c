@@ -37,6 +37,9 @@
 /* =========================================================================
  * Sense-reversing centralized barrier (lock-free)
  *
+ * Algorithm from Mellor-Crummey & Scott, "Algorithms for Scalable
+ * Synchronization on Shared-Memory Multiprocessors", ACM TOCS 9(1), 1991.
+ *
  * Each thread has a local sense flag. Threads atomically decrement a
  * shared counter. The last thread flips the global sense, releasing all.
  * ========================================================================= */
