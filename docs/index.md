@@ -317,6 +317,34 @@ in Haskell modules. Eliminates the need for separate `.cmm` files, manual
 handles compilation and linking automatically. Produces identical zero-overhead
 results as the hand-written Phase 10 primitives.
 
+**Phase 12 — Batched Safe Calls via Cmm**
+
+Amortizes the ~68ns safe FFI overhead by batching multiple C calls within a
+single `suspendThread`/`resumeThread` cycle, written manually in Cmm. At
+batch=100, per-call overhead drops to 2.7ns — approaching unsafe FFI cost
+(~2ns) for a 27x speedup. Details in
+[Section 11](#11-batched-safe-calls-via-cmm).
+
+**Phase 13 — Parallelism Crossover Analysis**
+
+Measures the break-even point between sequential unsafe FFI and parallel safe
+FFI. The crossover occurs at ~500 elements for sinsum workloads: below this,
+the ~1.8us OpenMP fork/join overhead exceeds the parallelism benefit. Details
+in [Section 13](#13-benchmarks).
+
+**Phase 14 — GHC Native Parallelism vs OpenMP**
+
+Compares Haskell's `forkIO` parallelism against OpenMP for CPU-bound work.
+OpenMP achieves ~2x higher throughput consistently, because it avoids GHC's
+per-task overhead (spark creation, thread scheduling, Capability contention).
+
+**Phase 15 — Deferred Task Execution**
+
+Implements OpenMP task queue with work-stealing barriers. Tasks created via
+`#pragma omp task` are deferred to a global queue and stolen by idle threads.
+Achieves 3.4–4.0x speedup on 4 threads with exact correctness match. Details
+in [Section 12](#12-deferred-task-execution).
+
 ---
 
 ## 6. Optimization: From 24x Slower to Parity
