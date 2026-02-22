@@ -127,7 +127,7 @@ src/
   HsTaskDemo.hs               # Phase 15: deferred task execution benchmark
   test_omp_tasks.c            # Phase 15: C-level task correctness/perf test
   HsZeroCopy.hs               # Phase 16: zero-copy FFI with pinned ByteArray
-  Data/Array/Linear.hs        # Phase 17: linear typed array module (~200 lines)
+  Data/Array/Linear.hs        # Phase 17: linear typed arrays (inspired by konn/linear-extra)
   HsLinearDemo.hs             # Phase 17: type-safe parallel sub-array demo
   bench_overhead.c           # Microbenchmark suite
   bench_dgemm.c              # DGEMM benchmark (native vs RTS)

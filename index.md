@@ -358,9 +358,11 @@ at N=512. Details in [Section 13](#13-zero-copy-ffi-with-pinned-bytearray).
 **Phase 17 — Linear Typed Arrays**
 
 Builds on Phase 16's pinned ByteArray with linear types (`-XLinearTypes`) to
-enforce disjoint ownership at compile time. A self-contained ~200-line module
-(`Data.Array.Linear`) provides `RW s` tokens for exclusive access and
-zero-copy `split`/`combine` for partitioning arrays into disjoint regions.
+enforce disjoint ownership at compile time. Inspired by
+[`konn/linear-extra`](https://github.com/konn/linear-extra)'s Borrowable
+`SArray`, a self-contained ~200-line module (`Data.Array.Linear`) provides
+`RW s` tokens for exclusive access and zero-copy `split`/`combine` for
+partitioning arrays into disjoint regions.
 Demonstrates type-safe row-partitioned DGEMM where each half of the output
 matrix is computed independently — the type system statically prevents
 aliased writes. Details in [Section 14](#14-linear-typed-arrays).
