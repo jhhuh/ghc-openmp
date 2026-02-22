@@ -172,10 +172,10 @@ flowchart TD
             E["1. ensure_rts()"] --> D["2. Store fn/data"] --> W["3. Wake workers"]
         end
         subgraph r2[" "]
-            direction RL
-            SB["4. Start barrier"] --> FN["5. fn(data)"] --> EB["6. End barrier"]
+            direction LR
+            EB["6. End barrier"] ~~~ FN["5. fn(data)"] ~~~ SB["4. Start barrier"]
         end
-        W --> SB
+        W --> SB --> FN --> EB
     end
 
     RT --> RTS
@@ -436,12 +436,10 @@ xychart-beta horizontal
   title "Optimization Journey: Phase 2 → Phase 3 (4 threads, us)"
   x-axis ["Fork/join", "Barrier"]
   y-axis "Latency (us)" 0 --> 25
-  bar [24.35, 7.01]
-  bar [0.81, 0.25]
-  bar [0.97, 0.51]
+  bar "Phase 2 (mutex+condvar)" [24.35, 7.01]
+  bar "Phase 3 (lock-free)" [0.81, 0.25]
+  bar "Native libgomp" [0.97, 0.51]
 </pre>
-
-*Bars: Phase 2 (mutex+condvar) | Phase 3 (lock-free) | Native libgomp*
 
 ---
 
@@ -744,13 +742,11 @@ closely at every batch size.
 <pre class="mermaid">
 xychart-beta
   title "Batched Safe Calls: Per-Call Overhead (ns)"
-  x-axis ["1", "2", "5", "10", "20", "50", "100"]
+  x-axis "Batch size" ["1", "2", "5", "10", "20", "50", "100"]
   y-axis "ns/call" 0 --> 75
-  line [69.1, 36.1, 15.2, 8.7, 5.3, 3.4, 2.7]
-  line [72.4, 71.3, 73.0, 71.0, 71.1, 71.7, 71.4]
+  line "Cmm batched" [69.1, 36.1, 15.2, 8.7, 5.3, 3.4, 2.7]
+  line "Standard safe" [72.4, 71.3, 73.0, 71.0, 71.1, 71.7, 71.4]
 </pre>
-
-*Lines: Cmm batched (decreasing) | Standard safe (flat ~72ns baseline)*
 
 ---
 
@@ -974,13 +970,11 @@ CPU frequency noise, not runtime overhead.
 <pre class="mermaid">
 xychart-beta
   title "DGEMM Head-to-Head: Native libgomp vs RTS (4 threads, ms)"
-  x-axis ["N=128", "N=256", "N=512", "N=1024"]
+  x-axis "Matrix size" ["N=128", "N=256", "N=512", "N=1024"]
   y-axis "Time (ms)" 0 --> 800
-  bar [0.86, 12.62, 77.51, 748.83]
-  bar [0.94, 12.28, 76.96, 663.37]
+  bar "Native libgomp" [0.86, 12.62, 77.51, 748.83]
+  bar "RTS-backed" [0.94, 12.28, 76.96, 663.37]
 </pre>
-
-*Bars: Native libgomp | RTS-backed. Performance is indistinguishable.*
 
 #### Scaling (RTS-backed, DGEMM 1024x1024)
 
@@ -1023,13 +1017,11 @@ overhead is ~1.8us (86ns safe FFI + 1712ns OpenMP fork/join).
 <pre class="mermaid">
 xychart-beta
   title "Parallelism Crossover: Sequential vs Parallel (4 threads)"
-  x-axis ["100", "200", "500", "1K", "5K", "100K"]
+  x-axis "Elements" ["100", "200", "500", "1K", "5K", "100K"]
   y-axis "Time (us)" 0 --> 1200
-  line [0.5, 1.3, 3.6, 7.5, 49.0, 1132]
-  line [2.1, 2.2, 2.9, 3.9, 16.6, 279]
+  line "Sequential C (unsafe FFI)" [0.5, 1.3, 3.6, 7.5, 49.0, 1132]
+  line "Parallel OpenMP (safe FFI)" [2.1, 2.2, 2.9, 3.9, 16.6, 279]
 </pre>
-
-*Lines: Sequential C (unsafe FFI) | Parallel OpenMP (safe FFI). Crossover at ~500 elements.*
 
 ### 12.5 GHC Native Parallelism vs OpenMP (Phase 14)
 
