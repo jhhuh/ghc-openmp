@@ -77,6 +77,8 @@ cabal run inline-cmm-demo -- +RTS -N4  # Phase 11: inline-cmm quasiquoter
 make demo-batch       # Phase 12: batched safe calls (27x overhead reduction)
 make demo-crossover   # Phase 13: parallelism crossover analysis
 make demo-parcompare  # Phase 14: GHC forkIO vs OpenMP
+make demo-tasks       # Phase 15: deferred task execution
+make test-tasks       # Phase 15: native vs RTS task comparison
 
 # Run benchmarks
 make bench            # microbenchmarks: native vs RTS
@@ -120,6 +122,8 @@ src/
   HsCmmBatch.hs               # Phase 12: batch overhead benchmark
   HsCrossover.hs              # Phase 13: parallelism crossover analysis
   HsParCompare.hs             # Phase 14: GHC forkIO vs OpenMP comparison
+  HsTaskDemo.hs               # Phase 15: deferred task execution benchmark
+  test_omp_tasks.c            # Phase 15: C-level task correctness/perf test
   bench_overhead.c           # Microbenchmark suite
   bench_dgemm.c              # DGEMM benchmark (native vs RTS)
   test_omp_basic.c           # Basic OpenMP construct tests
@@ -138,7 +142,7 @@ artifacts/                  # Research notes, plans, and benchmark results
 | `#pragma omp critical` (named and unnamed) | Full |
 | `#pragma omp single` | Full |
 | `#pragma omp atomic` | Fallback mutex |
-| `#pragma omp task` / `taskwait` | Inline execution (not deferred) |
+| `#pragma omp task` / `taskwait` | Full (deferred + work-stealing) |
 | `#pragma omp sections` | Full |
 | `#pragma omp ordered` | Mutex-based |
 | `omp_*` user API (threads, locks, timing) | Full |

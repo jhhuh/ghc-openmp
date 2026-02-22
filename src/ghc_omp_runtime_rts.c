@@ -67,6 +67,32 @@ static inline void spin_barrier_wait(spin_barrier_t *b, int *local_sense) {
     }
 }
 
+/* Task queue state — declared early so barriers can steal tasks */
+static atomic_int g_tasks_pending = 0;
+static bool task_try_steal_one(void);
+
+/* Barrier with integrated task stealing.
+ * While spinning for other threads, steal and execute queued tasks.
+ * Last thread arriving drains remaining tasks before releasing. */
+static inline void spin_barrier_wait_tasks(spin_barrier_t *b, int *local_sense) {
+    *local_sense = 1 - *local_sense;
+    if (atomic_fetch_sub_explicit(&b->count, 1, memory_order_acq_rel) == 1) {
+        /* Last thread: drain remaining tasks before releasing */
+        while (atomic_load_explicit(&g_tasks_pending, memory_order_acquire) > 0) {
+            if (!task_try_steal_one())
+                __builtin_ia32_pause();
+        }
+        atomic_store_explicit(&b->count, b->size, memory_order_relaxed);
+        atomic_store_explicit(&b->sense, *local_sense, memory_order_release);
+    } else {
+        /* Spin until sense flips — steal tasks while waiting */
+        while (atomic_load_explicit(&b->sense, memory_order_acquire) != *local_sense) {
+            if (!task_try_steal_one())
+                __builtin_ia32_pause();
+        }
+    }
+}
+
 /* =========================================================================
  * Internal state
  * ========================================================================= */
@@ -205,8 +231,8 @@ static void *worker_loop(void *arg) {
             /* Execute */
             fn(data);
 
-            /* End barrier */
-            spin_barrier_wait(&g_pool.end_barrier, &end_sense);
+            /* End barrier — steal pending tasks while waiting */
+            spin_barrier_wait_tasks(&g_pool.end_barrier, &end_sense);
 
             tl_in_parallel = false;
 
@@ -393,7 +419,8 @@ void GOMP_parallel(void (*fn)(void *), void *data,
         /* Execute */
         fn(data);
 
-        spin_barrier_wait(&g_pool.end_barrier, &master_end_sense);
+        /* End barrier — steal pending tasks while waiting */
+        spin_barrier_wait_tasks(&g_pool.end_barrier, &master_end_sense);
 
         /* Spin-wait for all workers to signal done */
         while (atomic_load_explicit(&g_pool.workers_done,
@@ -432,7 +459,7 @@ void GOMP_parallel_end(void) {
 
 void GOMP_barrier(void) {
     if (tl_num_threads <= 1) return;
-    spin_barrier_wait(&g_omp_barrier, &tl_barrier_sense);
+    spin_barrier_wait_tasks(&g_omp_barrier, &tl_barrier_sense);
 }
 
 /* =========================================================================
@@ -650,29 +677,131 @@ void GOMP_parallel_loop_runtime(void (*fn)(void *), void *data,
 }
 
 /* =========================================================================
- * GOMP_task / GOMP_taskwait — inline execution
+ * GOMP_task / GOMP_taskwait — deferred execution with task stealing
+ *
+ * Tasks with cpyfn are deferred: data is copied to the heap and pushed
+ * to a global queue. Other threads steal tasks in GOMP_taskwait and
+ * GOMP_barrier. Tasks without cpyfn (stack data) run inline.
  * ========================================================================= */
+
+typedef struct task_entry {
+    void (*fn)(void *);
+    void *data;
+    struct task_entry *next;
+} task_entry_t;
+
+static task_entry_t *g_task_head = NULL;
+static task_entry_t *g_task_tail = NULL;
+static pthread_mutex_t g_task_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void task_queue_push(void (*fn)(void *), void *data) {
+    task_entry_t *entry = malloc(sizeof(task_entry_t));
+    entry->fn = fn;
+    entry->data = data;
+    entry->next = NULL;
+
+    pthread_mutex_lock(&g_task_mutex);
+    if (g_task_tail) {
+        g_task_tail->next = entry;
+    } else {
+        g_task_head = entry;
+    }
+    g_task_tail = entry;
+    pthread_mutex_unlock(&g_task_mutex);
+
+    atomic_fetch_add_explicit(&g_tasks_pending, 1, memory_order_release);
+}
+
+static task_entry_t *task_queue_try_pop(void) {
+    task_entry_t *entry = NULL;
+    pthread_mutex_lock(&g_task_mutex);
+    if (g_task_head) {
+        entry = g_task_head;
+        g_task_head = entry->next;
+        if (!g_task_head) g_task_tail = NULL;
+    }
+    pthread_mutex_unlock(&g_task_mutex);
+    return entry;
+}
+
+/* Execute tasks from the queue until all pending tasks are complete. */
+static void task_drain_queue(void) {
+    while (atomic_load_explicit(&g_tasks_pending, memory_order_acquire) > 0) {
+        task_entry_t *entry = task_queue_try_pop();
+        if (entry) {
+            entry->fn(entry->data);
+            free(entry->data);
+            free(entry);
+            atomic_fetch_sub_explicit(&g_tasks_pending, 1,
+                                      memory_order_release);
+        } else {
+            /* No tasks in queue, but some still executing by other threads */
+            __builtin_ia32_pause();
+        }
+    }
+}
+
+/* Try to steal one task. Returns true if a task was executed. */
+static bool task_try_steal_one(void) {
+    task_entry_t *entry = task_queue_try_pop();
+    if (entry) {
+        entry->fn(entry->data);
+        free(entry->data);
+        free(entry);
+        atomic_fetch_sub_explicit(&g_tasks_pending, 1,
+                                  memory_order_release);
+        return true;
+    }
+    return false;
+}
 
 void GOMP_task(void (*fn)(void *), void *data,
                void (*cpyfn)(void *, void *),
                long arg_size, long arg_align,
                bool if_clause, unsigned flags,
                void **depend, int priority) {
-    (void)arg_align; (void)flags; (void)depend; (void)priority;
-    if (if_clause && cpyfn) {
-        void *buf = malloc(arg_size);
-        cpyfn(buf, data);
-        fn(buf);
-        free(buf);
+    (void)flags; (void)depend; (void)priority;
+
+    if (!if_clause || !tl_in_parallel) {
+        /* Execute immediately:
+         * - if_clause is false (OpenMP spec says must execute inline)
+         * - Not in parallel region: no other threads to steal */
+        if (cpyfn) {
+            long align = arg_align > 0 ? arg_align : 8;
+            long sz = ((arg_size + align - 1) / align) * align;
+            void *buf = aligned_alloc(align, sz);
+            cpyfn(buf, data);
+            fn(buf);
+            free(buf);
+        } else {
+            fn(data);
+        }
     } else {
-        fn(data);
+        /* Defer: copy data to heap (via cpyfn or memcpy), push to task queue */
+        long align = arg_align > 0 ? arg_align : 8;
+        long sz = ((arg_size + align - 1) / align) * align;
+        void *buf = aligned_alloc(align, sz > 0 ? sz : 8);
+        if (cpyfn) {
+            cpyfn(buf, data);
+        } else if (arg_size > 0) {
+            __builtin_memcpy(buf, data, arg_size);
+        }
+        task_queue_push(fn, buf);
     }
 }
 
-void GOMP_taskwait(void) { }
-void GOMP_taskyield(void) { }
+void GOMP_taskwait(void) {
+    task_drain_queue();
+}
+void GOMP_taskyield(void) {
+    /* Try to make progress on pending tasks */
+    task_try_steal_one();
+}
 void GOMP_taskgroup_start(void) { }
-void GOMP_taskgroup_end(void) { }
+void GOMP_taskgroup_end(void) {
+    /* Wait for all tasks in this group */
+    task_drain_queue();
+}
 
 /* =========================================================================
  * GOMP_sections

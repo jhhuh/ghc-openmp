@@ -102,6 +102,49 @@ double parallel_reduce_callback(hs_callback_t callback, int n) {
     return sum;
 }
 
+/* ---- Task benchmarks: deferred execution ---- */
+
+/* Sequential: compute sinsum tasks one-by-one */
+double run_sequential_benchmark(int ntasks, int work_per_task) {
+    double total = 0.0;
+    for (int i = 0; i < ntasks; i++) {
+        double sum = 0.0;
+        for (int j = 0; j < work_per_task; j++) {
+            sum += sin((double)(i * work_per_task + j) * 0.001);
+        }
+        total += sum;
+    }
+    return total;
+}
+
+/* Parallel: create ntasks OpenMP tasks inside a single block.
+ * With deferred execution, idle threads steal tasks from the queue. */
+static double g_task_results[100000]; /* pre-allocated result array */
+
+double run_task_benchmark(int ntasks, int work_per_task) {
+    #pragma omp parallel
+    {
+        #pragma omp single
+        {
+            for (int i = 0; i < ntasks; i++) {
+                #pragma omp task firstprivate(i)
+                {
+                    double sum = 0.0;
+                    for (int j = 0; j < work_per_task; j++) {
+                        sum += sin((double)(i * work_per_task + j) * 0.001);
+                    }
+                    g_task_results[i] = sum;
+                }
+            }
+        }
+        /* implicit barrier — threads steal tasks here */
+    }
+
+    double total = 0.0;
+    for (int i = 0; i < ntasks; i++) total += g_task_results[i];
+    return total;
+}
+
 /* Query runtime info */
 int get_omp_num_threads(void) {
     int n;

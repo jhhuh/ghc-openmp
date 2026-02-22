@@ -123,3 +123,12 @@ scaling at 100K+ elements.
 
 `forkIO` + manual splitting vs OpenMP safe FFI. OpenMP consistently ~2x faster.
 Gap is per-element cost (GCC SIMD + no boxing), not parallelism efficiency.
+
+## 2026-02-23: Phase 15 — Deferred task execution
+
+Global task queue + work-stealing barriers. Near-linear speedup (3.4-4.0x on
+4 threads). 1.7x overhead vs native libgomp (mutex queue vs lock-free).
+
+**Key discovery**: GCC may omit explicit `GOMP_barrier` after `#pragma omp
+single`. Task stealing must happen at pool end_barrier, not just
+`GOMP_barrier`. Also: GCC passes `cpyfn=NULL` for simple scalar firstprivate.

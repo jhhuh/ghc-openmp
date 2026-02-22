@@ -201,6 +201,37 @@ build/crossover: src/HsCrossover.hs build/omp_compute.o build/ghc_omp_runtime_rt
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_crossover_out
 
+# Phase 15: Deferred task execution
+build/task_demo: src/HsTaskDemo.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		src/HsTaskDemo.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-outputdir build/hs_task_out
+
+# Test task execution with native libgomp for comparison
+build/test_tasks_native: src/test_omp_tasks.c
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -o $@ $< -lm
+
+build/test_tasks_rts: src/test_omp_tasks.c build/ghc_omp_runtime_rts.o build/HsStub.o
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -c $< -o build/test_omp_tasks_rts.o
+	$(GHC) -threaded -no-hs-main \
+		build/test_omp_tasks_rts.o build/ghc_omp_runtime_rts.o build/HsStub.o \
+		-o $@ -lpthread -lm
+
+demo-tasks: build/task_demo
+	@echo "=== Deferred Task Execution Demo ==="
+	build/task_demo +RTS -N4
+
+test-tasks: build/test_tasks_native build/test_tasks_rts
+	@echo "=== Tasks: Native libgomp ==="
+	@OMP_NUM_THREADS=4 build/test_tasks_native
+	@echo ""
+	@echo "=== Tasks: GHC RTS-backed ==="
+	@OMP_NUM_THREADS=4 build/test_tasks_rts
+
 # Phase 14: GHC native parallelism vs OpenMP
 build/par_compare: src/HsParCompare.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build

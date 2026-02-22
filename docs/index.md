@@ -27,11 +27,12 @@ title: "GHC's Runtime System as an OpenMP Runtime"
 9. [Bidirectional Interop](#9-bidirectional-interop)
 10. [Cmm Primitives](#10-cmm-primitives)
 11. [Batched Safe Calls via Cmm](#11-batched-safe-calls-via-cmm)
-12. [Benchmarks](#12-benchmarks)
-13. [Notable Bugs and Fixes](#13-notable-bugs-and-fixes)
-14. [Limitations](#14-limitations)
-15. [Conclusions](#15-conclusions)
-16. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
+12. [Deferred Task Execution](#12-deferred-task-execution)
+13. [Benchmarks](#13-benchmarks)
+14. [Notable Bugs and Fixes](#14-notable-bugs-and-fixes)
+15. [Limitations](#15-limitations)
+16. [Conclusions](#16-conclusions)
+17. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
 
 ---
 
@@ -664,7 +665,43 @@ closely at every batch size.
 
 ---
 
-## 12. Benchmarks
+## 12. Deferred Task Execution
+
+OpenMP tasks (`#pragma omp task`) enable fork-join parallelism where one
+thread creates work items and other threads steal them. Our runtime supports
+deferred execution: tasks are queued to a global work-stealing queue and
+executed by idle threads waiting at barriers.
+
+### 12.1 Implementation
+
+The task queue is a mutex-protected linked list with an atomic pending counter:
+
+- **GOMP_task**: When `if_clause` is true and we're in a parallel region,
+  copies data to heap (via `cpyfn` or `memcpy`) and pushes to the queue.
+  Otherwise executes inline.
+- **Barrier task stealing**: `spin_barrier_wait_tasks` steals and executes
+  tasks while spinning. The last thread arriving drains remaining tasks
+  before releasing the barrier.
+- **End-of-parallel stealing**: The pool's end-barrier uses the task-stealing
+  variant, since GCC may omit explicit `GOMP_barrier` calls after
+  `#pragma omp single`.
+
+### 12.2 Results (4 threads, best of 5)
+
+| Tasks | Sequential | Parallel | Speedup |
+|------:|-----------:|---------:|--------:|
+| 100   | 1.7 ms     | 0.3 ms   | 5.41x   |
+| 500   | 5.7 ms     | 1.5 ms   | 3.86x   |
+| 1,000 | 11.3 ms    | 2.9 ms   | 3.88x   |
+| 5,000 | 57.5 ms    | 14.3 ms  | 4.03x   |
+| 10,000| 112.2 ms   | 32.7 ms  | 3.43x   |
+
+Near-linear scaling (3.4-4.0x on 4 threads). Correctness verified against
+sequential reference with exact match.
+
+---
+
+## 13. Benchmarks
 
 All benchmarks on an Intel i7-10750H (6C/12T), NixOS, GCC 15.2, GHC 9.10.3,
 powersave governor. Best-of-N timing to reduce CPU frequency variance.
@@ -781,7 +818,7 @@ both achieve near-ideal scaling on 4 threads.
 
 ---
 
-## 13. Notable Bugs and Fixes
+## 14. Notable Bugs and Fixes
 
 ### 12.1 Barrier Sense Mismatch Deadlock
 
@@ -814,7 +851,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 14. Limitations
+## 15. Limitations
 
 | Limitation | Impact | Notes |
 |---|---|---|
@@ -827,7 +864,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 15. Conclusions
+## 16. Conclusions
 
 GHC's Runtime System can serve as a fully functional OpenMP runtime with
 **zero measurable overhead** compared to native libgomp. The
