@@ -118,3 +118,8 @@ N calls. At batch=100, per-call cost drops to 2.7ns (approaching unsafe FFI).
 OpenMP from Haskell breaks even at ~500 elements (for ~11ns/element work).
 Fixed overhead ~1.8us (86ns safe FFI + 1712ns fork/join). Near-ideal 4x
 scaling at 100K+ elements.
+
+## 2026-02-23: Phase 14 — GHC native parallelism vs OpenMP
+
+`forkIO` + manual splitting vs OpenMP safe FFI. OpenMP consistently ~2x faster.
+Gap is per-element cost (GCC SIMD + no boxing), not parallelism efficiency.

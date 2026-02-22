@@ -201,6 +201,18 @@ build/crossover: src/HsCrossover.hs build/omp_compute.o build/ghc_omp_runtime_rt
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_crossover_out
 
+# Phase 14: GHC native parallelism vs OpenMP
+build/par_compare: src/HsParCompare.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		src/HsParCompare.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-outputdir build/hs_parcomp_out
+
+demo-parcompare: build/par_compare
+	@echo "=== GHC vs OpenMP Parallelism Comparison ==="
+	build/par_compare +RTS -N4
+
 demo-crossover: build/crossover
 	@echo "=== Parallelism Crossover Analysis ==="
 	build/crossover +RTS -N4

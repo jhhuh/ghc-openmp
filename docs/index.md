@@ -762,6 +762,23 @@ The crossover is at **~500 elements** — above this, OpenMP parallel execution
 from Haskell is faster than sequential C called via unsafe FFI. The fixed
 overhead is ~1.8us (86ns safe FFI + 1712ns OpenMP fork/join).
 
+### 12.5 GHC Native Parallelism vs OpenMP (Phase 14)
+
+For the same compute-bound sinsum workload, how does Haskell's `forkIO` with
+manual work splitting compare to OpenMP via safe FFI?
+
+| Elements | Seq Haskell | Seq C | Par Haskell | Par OpenMP | Hs/OMP ratio |
+|---|---|---|---|---|---|
+| 10K | 234 us | 106 us | 78 us | 30 us | 2.6x |
+| 100K | 2448 us | 1122 us | 654 us | 287 us | 2.3x |
+| 1M | 24290 us | 11425 us | 6203 us | 3269 us | 1.9x |
+| 10M | 243418 us | 113917 us | 65448 us | 33303 us | 2.0x |
+
+OpenMP is consistently **~2x faster** than parallel Haskell. The gap comes
+entirely from per-element cost (C is 2.1x faster than Haskell for `sin()`
+due to SIMD vectorization and no boxing), not from parallelism overhead —
+both achieve near-ideal scaling on 4 threads.
+
 ---
 
 ## 13. Notable Bugs and Fixes
