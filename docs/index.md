@@ -793,9 +793,16 @@ O(n³) inner loop. `-ddump-simpl` confirms the hot loop uses `+##`, `*##`, and
 ## 14. Linear Typed Arrays
 
 Phase 17 uses GHC's `-XLinearTypes` extension to enforce exclusive ownership
-of mutable array regions at compile time. The core idea: linearity is on
-*tokens* (`RW s`), not the array itself. You need the right token to
-read/write, and `split`/`combine` tracks disjoint ownership at the type level.
+of mutable array regions at compile time. The design is inspired by
+[`konn/linear-extra`](https://github.com/konn/linear-extra)'s Borrowable
+`SArray`, which uses phantom-tagged tokens for zero-copy split/combine. We
+extract the core pattern (~200 lines, no external dependencies) and integrate
+it with Phase 16's unboxed primops (`readDoubleArray#`/`writeDoubleArray#`
+instead of `Storable`).
+
+The core idea: linearity is on *tokens* (`RW s`), not the array itself. You
+need the right token to read/write, and `split`/`combine` tracks disjoint
+ownership at the type level.
 
 ### 14.1 Design
 
