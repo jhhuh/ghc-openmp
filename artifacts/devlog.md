@@ -154,3 +154,9 @@ Self-contained `Data.Array.Linear` (~200 lines) inspired by
 2. Underscore-prefixed `let` bindings lazy → fills never execute. Fix: `seq`.
 3. `withPtr` via `runRW#` doesn't propagate C side effects.
    Fix: `unsafeWithPtr` in IO.
+
+## 2026-02-23: Documentation improvements
+
+Added Mermaid charts for 5 key benchmarks + architecture diagram. Fixed
+`\\n` → `<br/>`, invisible `~~~` links for horizontal layout. Cited
+Mellor-Crummey & Scott (1991). Credited `konn/linear-extra`.
