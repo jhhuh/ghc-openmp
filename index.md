@@ -155,42 +155,45 @@ that `inline-cmm` automates.
 
 ## 4. Architecture
 
-```
-Haskell program                    C program
-(ghc -threaded)                    (gcc -fopenmp -no-hs-main)
-       |                                  |
-       | foreign import ccall safe        | calls GOMP_parallel()
-       v                                  v
-  +---------------------------------------------------------+
-  |           ghc_omp_runtime_rts.c                         |
-  |                                                         |
-  |  GOMP_parallel(fn, data, N, flags):                     |
-  |    1. ensure_rts()  -- boot GHC RTS if needed           |
-  |    2. Store fn/data, bump atomic generation counter     |
-  |    3. Wake workers (condvar broadcast)                  |
-  |    4. Start barrier -- all threads sync                 |
-  |    5. fn(data) on all threads                           |
-  |    6. End barrier -- all threads sync                   |
-  |    7. Wait for worker completion                        |
-  +---------------------------------------------------------+
-       |
-       v
-  +---------------------------------------------------------+
-  |              GHC Runtime System                         |
-  |                                                         |
-  |  +--------+  +--------+  +--------+  +--------+        |
-  |  | Cap 0  |  | Cap 1  |  | Cap 2  |  | Cap 3  |        |
-  |  | master |  | worker |  | worker |  | worker |        |
-  |  +--------+  +--------+  +--------+  +--------+        |
-  |                                                         |
-  |  Workers are OS threads pinned to Capabilities.         |
-  |  After rts_lock()/rts_unlock() init, they do NOT        |
-  |  hold Capabilities -- invisible to GC.                  |
-  +---------------------------------------------------------+
-```
+<pre class="mermaid">
+flowchart TD
+    subgraph Host["Host Program"]
+        HS["Haskell program\n(ghc -threaded)"]
+        CP["C program\n(gcc -fopenmp)"]
+    end
 
-*Figure 1: Runtime architecture. Workers are plain OS threads registered with
-GHC's RTS but not holding Capabilities during OpenMP execution.*
+    HS -->|"foreign import\nccall safe"| RT
+    CP -->|"calls\nGOMP_parallel()"| RT
+
+    subgraph RT["ghc_omp_runtime_rts.c"]
+        direction TB
+        E["1. ensure_rts() — boot GHC RTS if needed"]
+        D["2. Store fn/data, bump atomic generation"]
+        W["3. Wake workers (condvar broadcast)"]
+        SB["4. Start barrier — all threads sync"]
+        FN["5. fn(data) on all threads"]
+        EB["6. End barrier — all threads sync"]
+        E --> D --> W --> SB --> FN --> EB
+    end
+
+    RT --> RTS
+
+    subgraph RTS["GHC Runtime System"]
+        direction LR
+        C0["Cap 0\n(master)"]
+        C1["Cap 1\n(worker)"]
+        C2["Cap 2\n(worker)"]
+        C3["Cap 3\n(worker)"]
+    end
+
+    style Host fill:#f9f9f9,stroke:#999
+    style RT fill:#e8f4e8,stroke:#4a4
+    style RTS fill:#e8e8f4,stroke:#44a
+</pre>
+
+*Figure 1: Runtime architecture. Workers are plain OS threads pinned to
+GHC Capabilities. After `rts_lock()`/`rts_unlock()` init, they do NOT
+hold Capabilities — invisible to GC.*
 
 ### 4.1 Worker Pool Design
 
