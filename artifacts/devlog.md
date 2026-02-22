@@ -95,3 +95,9 @@ Wrote `omp_prims.cmm` — single memory load from `BaseReg` for Capability
 number. Results: prim ~0ns (optimized away by GHC), unsafe FFI ~2.3ns, safe FFI
 ~67ns (29x ratio). Prim being pure means GHC does LICM; needed data-dependent
 loop to measure.
+
+## 2026-02-22: Phase 11 — inline-cmm integration
+
+Integrated `jhhuh/inline-cmm` via cabal source-repository-package. The
+`[cmm| ... |]` quasiquoter automates compilation and linking. Same ~0ns
+overhead as hand-written Cmm.

@@ -306,6 +306,15 @@ unsafe (~2ns), safe (~68ns). The 29x safe/unsafe ratio quantifies the
 exact cost of Capability release/reacquire per call.
 Details in [Section 10](#10-cmm-primitives).
 
+**Phase 11 — inline-cmm Integration**
+
+Integrates the [`inline-cmm`](https://github.com/jhhuh/inline-cmm) library,
+which provides a `[cmm| ... |]` quasiquoter for embedding Cmm code directly
+in Haskell modules. Eliminates the need for separate `.cmm` files, manual
+`foreign import prim` declarations, and Makefile targets. Template Haskell
+handles compilation and linking automatically. Produces identical zero-overhead
+results as the hand-written Phase 10 primitives.
+
 ---
 
 ## 6. Optimization: From 24x Slower to Parity
