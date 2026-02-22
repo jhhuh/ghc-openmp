@@ -1,0 +1,83 @@
+#include "Cmm.h"
+
+/*
+ * Phase 12: Batched safe calls via Cmm.
+ *
+ * Standard 'foreign import ccall safe' does suspendThread/resumeThread
+ * per call (~65ns overhead each time). By writing the suspend/resume
+ * manually in Cmm, we can batch N calls within a single cycle,
+ * amortizing the overhead.
+ *
+ * Key details for manual suspend/resume in Cmm:
+ *  1. Save Sp to TSO before suspendThread (so GC can scan our stack)
+ *  2. Restore Sp from TSO after resumeThread (GC may have moved the stack)
+ *  3. tok from suspendThread is void*, NOT a GC pointer — no "ptr" annotation
+ */
+
+/* Single safe call — manual suspend/resume.
+ * This does exactly what 'foreign import ccall safe' does internally.
+ * Useful as a baseline to verify our manual approach matches. */
+cmm_safe_tid(W_ dummy) {
+    W_ tok;
+    W_ result;
+    W_ new_base;
+    W_ stack;
+
+    /* Save Sp to TSO — required before suspendThread so GC can scan our stack */
+    stack = StgTSO_stackobj(CurrentTSO);
+    StgStack_sp(stack) = Sp;
+
+    (tok) = ccall suspendThread(BaseReg "ptr", 0);
+    (result) = ccall omp_get_thread_num();
+    (new_base) = ccall resumeThread(tok);
+    BaseReg = new_base;
+
+    /* Restore Sp from TSO — GC may have moved the stack */
+    stack = StgTSO_stackobj(CurrentTSO);
+    Sp = StgStack_sp(stack);
+
+    return (result);
+}
+
+/* Batched safe calls — N calls within one suspend/resume cycle.
+ * Amortizes the ~65ns suspend/resume overhead over N calls.
+ *
+ * Expected per-call cost: (65 + N * 2) / N  ns
+ *   N=1:   ~67 ns  (same as standard safe)
+ *   N=10:  ~8.5 ns
+ *   N=100: ~2.6 ns  (approaches unsafe FFI cost) */
+cmm_batched_tid(W_ n) {
+    W_ tok;
+    W_ result;
+    W_ new_base;
+    W_ stack;
+    W_ i;
+    W_ t;
+
+    /* Save Sp to TSO */
+    stack = StgTSO_stackobj(CurrentTSO);
+    StgStack_sp(stack) = Sp;
+
+    (tok) = ccall suspendThread(BaseReg "ptr", 0);
+
+    result = 0;
+    i = 0;
+    goto loop_check;
+
+loop_body:
+    (t) = ccall omp_get_thread_num();
+    result = result + t;
+    i = i + 1;
+
+loop_check:
+    if (i < n) goto loop_body;
+
+    (new_base) = ccall resumeThread(tok);
+    BaseReg = new_base;
+
+    /* Restore Sp from TSO */
+    stack = StgTSO_stackobj(CurrentTSO);
+    Sp = StgStack_sp(stack);
+
+    return (result);
+}

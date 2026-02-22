@@ -101,3 +101,14 @@ loop to measure.
 Integrated `jhhuh/inline-cmm` via cabal source-repository-package. The
 `[cmm| ... |]` quasiquoter automates compilation and linking. Same ~0ns
 overhead as hand-written Cmm.
+
+## 2026-02-22: Phase 12 — Batched safe calls via Cmm
+
+Manual `suspendThread`/`resumeThread` in Cmm amortizes 65ns overhead across
+N calls. At batch=100, per-call cost drops to 2.7ns (approaching unsafe FFI).
+
+**Three bugs found and fixed**:
+1. Missing `Sp` save/restore before `suspendThread` → GC scans garbage → segfault.
+2. `"ptr"` annotation on `resumeThread` token → treated as GC root → crash.
+3. `foreign import prim` is pure → GHC CSEs side effects. Fix: thread
+   `State# RealWorld`.

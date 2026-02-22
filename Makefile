@@ -181,6 +181,22 @@ demo-cmm: build/cmm_demo
 	@echo "=== Cmm Primitives Demo ==="
 	build/cmm_demo +RTS -N4
 
+# Phase 12: Batched safe calls via Cmm
+build/omp_batch.o: src/omp_batch.cmm
+	@mkdir -p build
+	$(GHC) -c -x cmm $< -o $@
+
+build/cmm_batch: src/HsCmmBatch.hs build/omp_batch.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		src/HsCmmBatch.hs build/omp_batch.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-outputdir build/hs_batch_out
+
+demo-batch: build/cmm_batch
+	@echo "=== Batched Safe Calls Demo ==="
+	build/cmm_batch +RTS -N4
+
 # ---- Benchmarks ----
 
 build/bench_native: src/bench_overhead.c
