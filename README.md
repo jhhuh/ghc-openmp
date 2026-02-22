@@ -79,6 +79,7 @@ make demo-crossover   # Phase 13: parallelism crossover analysis
 make demo-parcompare  # Phase 14: GHC forkIO vs OpenMP
 make demo-tasks       # Phase 15: deferred task execution
 make test-tasks       # Phase 15: native vs RTS task comparison
+make demo-zerocopy    # Phase 16: zero-copy FFI with pinned ByteArray
 
 # Run benchmarks
 make bench            # microbenchmarks: native vs RTS
@@ -124,6 +125,7 @@ src/
   HsParCompare.hs             # Phase 14: GHC forkIO vs OpenMP comparison
   HsTaskDemo.hs               # Phase 15: deferred task execution benchmark
   test_omp_tasks.c            # Phase 15: C-level task correctness/perf test
+  HsZeroCopy.hs               # Phase 16: zero-copy FFI with pinned ByteArray
   bench_overhead.c           # Microbenchmark suite
   bench_dgemm.c              # DGEMM benchmark (native vs RTS)
   test_omp_basic.c           # Basic OpenMP construct tests

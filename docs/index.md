@@ -28,11 +28,12 @@ title: "GHC's Runtime System as an OpenMP Runtime"
 10. [Cmm Primitives](#10-cmm-primitives)
 11. [Batched Safe Calls via Cmm](#11-batched-safe-calls-via-cmm)
 12. [Deferred Task Execution](#12-deferred-task-execution)
-13. [Benchmarks](#13-benchmarks)
-14. [Notable Bugs and Fixes](#14-notable-bugs-and-fixes)
-15. [Limitations](#15-limitations)
-16. [Conclusions](#16-conclusions)
-17. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
+13. [Zero-Copy FFI with Pinned ByteArray](#13-zero-copy-ffi-with-pinned-bytearray)
+14. [Benchmarks](#14-benchmarks)
+15. [Notable Bugs and Fixes](#15-notable-bugs-and-fixes)
+16. [Limitations](#16-limitations)
+17. [Conclusions](#17-conclusions)
+18. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
 
 ---
 
@@ -344,6 +345,14 @@ Implements OpenMP task queue with work-stealing barriers. Tasks created via
 `#pragma omp task` are deferred to a global queue and stolen by idle threads.
 Achieves 3.4–4.0x speedup on 4 threads with exact correctness match. Details
 in [Section 12](#12-deferred-task-execution).
+
+**Phase 16 — Zero-Copy FFI with Pinned ByteArray**
+
+Eliminates boxing overhead at the Haskell↔OpenMP boundary. Uses pinned
+`ByteArray#` with `writeDoubleArray#`/`readDoubleArray#` primops instead of
+`allocaArray`/`peekElemOff`/`pokeElemOff`. Data passes to C via
+`mutableByteArrayContents#` — zero marshalling. DGEMM inner loop 19% faster
+at N=512. Details in [Section 13](#13-zero-copy-ffi-with-pinned-bytearray).
 
 ---
 
@@ -729,7 +738,48 @@ sequential reference with exact match.
 
 ---
 
-## 13. Benchmarks
+## 13. Zero-Copy FFI with Pinned ByteArray
+
+Phase 16 eliminates boxing overhead at the Haskell↔OpenMP boundary. The standard
+FFI pattern (`allocaArray` + `peekElemOff`/`pokeElemOff`) boxes every element as
+`CDouble` and converts via `realToFrac`:
+
+```haskell
+-- Phase 7 (boxed): every element goes through CDouble
+a <- peekElemOff pA (i * n + k)    -- returns boxed CDouble
+b <- peekElemOff pB (k * n + j)    -- returns boxed CDouble
+go (acc + realToFrac a * realToFrac b) (k + 1)  -- 4 box/unbox ops
+```
+
+Phase 16 uses pinned `ByteArray#` with unboxed primops:
+
+```haskell
+-- Phase 16 (unboxed): Double# throughout, no boxing
+case readDoubleArray# mbaA (i *# n +# k) s of
+    (# s', a #) ->     -- a :: Double# (unboxed)
+        case readDoubleArray# mbaB (k *# n +# j) s' of
+            (# s'', b #) ->     -- b :: Double# (unboxed)
+                goK s'' i j (k +# 1#) (acc +## (a *## b))
+```
+
+The pinned ByteArray is passed to C via `mutableByteArrayContents#`, which
+returns a raw `Addr#` — zero-copy, no marshalling. `touch#` keeps the
+ByteArray alive during the C call.
+
+**Haskell Sequential DGEMM (inner loop improvement):**
+
+| N | Boxed (ms) | Unboxed (ms) | Speedup |
+|--:|-----------:|-------------:|--------:|
+| 256 | 57.3 | 53.4 | 1.07x |
+| 512 | 457.9 | 384.6 | **1.19x** |
+
+The 19% improvement at N=512 comes from eliminating `CDouble` boxing in the
+O(n³) inner loop. `-ddump-simpl` confirms the hot loop uses `+##`, `*##`, and
+`readDoubleArray#` with no `D#` constructor.
+
+---
+
+## 14. Benchmarks
 
 All benchmarks on an Intel i7-10750H (6C/12T), NixOS, GCC 15.2, GHC 9.10.3,
 powersave governor. Best-of-N timing to reduce CPU frequency variance.
@@ -846,7 +896,7 @@ both achieve near-ideal scaling on 4 threads.
 
 ---
 
-## 14. Notable Bugs and Fixes
+## 15. Notable Bugs and Fixes
 
 ### 12.1 Barrier Sense Mismatch Deadlock
 
@@ -879,7 +929,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 15. Limitations
+## 16. Limitations
 
 | Limitation | Impact | Notes |
 |---|---|---|
@@ -892,7 +942,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 16. Conclusions
+## 17. Conclusions
 
 GHC's Runtime System can serve as a fully functional OpenMP runtime with
 **zero measurable overhead** compared to native libgomp. The

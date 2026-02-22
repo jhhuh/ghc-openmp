@@ -132,3 +132,12 @@ Global task queue + work-stealing barriers. Near-linear speedup (3.4-4.0x on
 **Key discovery**: GCC may omit explicit `GOMP_barrier` after `#pragma omp
 single`. Task stealing must happen at pool end_barrier, not just
 `GOMP_barrier`. Also: GCC passes `cpyfn=NULL` for simple scalar firstprivate.
+
+## 2026-02-23: Phase 16 — Zero-copy FFI with pinned ByteArray
+
+`newPinnedByteArray#` + `mutableByteArrayContents#` for zero-copy data
+passing. `readDoubleArray#`/`writeDoubleArray#` eliminate CDouble boxing.
+Inner loop 19% faster at N=512. Verified via `-ddump-simpl`.
+
+**Gotcha**: `forM_ [0..n-1]` allocates a list — GHC doesn't always fuse it.
+Replaced with manual `go` loop.

@@ -252,6 +252,18 @@ demo-batch: build/cmm_batch
 	@echo "=== Batched Safe Calls Demo ==="
 	build/cmm_batch +RTS -N4
 
+# Phase 16: Zero-copy FFI with pinned ByteArray
+build/zerocopy_demo: src/HsZeroCopy.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		src/HsZeroCopy.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-outputdir build/hs_zerocopy_out
+
+demo-zerocopy: build/zerocopy_demo
+	@echo "=== Zero-Copy FFI Demo ==="
+	build/zerocopy_demo +RTS -N4
+
 # ---- Benchmarks ----
 
 build/bench_native: src/bench_overhead.c
