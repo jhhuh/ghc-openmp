@@ -1,5 +1,10 @@
 # ghc-openmp: GHC's Runtime System as an OpenMP Runtime
 
+> **Note:** This is an experimental project. The claims and results have not been
+> thoroughly reviewed and should be considered tentative. The code, experiment
+> design, and execution were conducted with significant assistance from
+> [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+
 An experimental OpenMP runtime that uses GHC's Runtime System (RTS) as its
 thread pool and scheduler infrastructure. Standard OpenMP C code compiled with
 `gcc -fopenmp` runs on GHC Capabilities instead of libgomp's pthreads, enabling
