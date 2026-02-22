@@ -177,6 +177,42 @@ Performance is indistinguishable within measurement noise.
    Capability, so other Haskell green threads run while OpenMP executes.
    Workers don't hold Capabilities, making them invisible to GC.
 
+## Cmm Primitives and inline-cmm
+
+Phase 10 uses [Cmm](https://gitlab.haskell.org/ghc/ghc/-/wikis/commentary/compiler/cmm-type)
+(GHC's low-level intermediate representation) to write primitives callable from
+Haskell via `foreign import prim`. This is the fastest calling convention GHC
+offers — arguments pass directly in STG registers with no FFI boundary at all.
+
+For example, reading the current Capability number (equivalent to
+`omp_get_thread_num()`) compiles to a single memory load:
+
+```cmm
+#include "Cmm.h"
+
+omp_prim_cap_no(W_ dummy) {
+    return (Capability_no(MyCapability()));
+}
+```
+
+```haskell
+foreign import prim "omp_prim_cap_no" primCapNo# :: Int# -> Int#
+```
+
+The [`inline-cmm`](https://github.com/jhhuh/inline-cmm) library automates this
+pattern, letting you embed Cmm code directly in Haskell modules via a
+`[cmm| ... |]` quasiquoter — similar to how `inline-c` handles C. It
+automatically generates the `foreign import prim` declaration and compiles the
+Cmm to an object file via Template Haskell.
+
+### Calling Convention Overhead
+
+| Convention | ns/call | Notes |
+|---|---|---|
+| `foreign import prim` (Cmm) | ~0 | GHC can optimize away (LICM, CSE) |
+| `foreign import ccall unsafe` | ~2 | STG register save/restore |
+| `foreign import ccall safe` | ~68 | + Capability release/reacquire |
+
 ## License
 
 Experimental research project.
