@@ -158,12 +158,12 @@ that `inline-cmm` automates.
 <pre class="mermaid">
 flowchart TD
     subgraph Host["Host Program"]
-        HS["Haskell program\n(ghc -threaded)"]
-        CP["C program\n(gcc -fopenmp)"]
+        HS["Haskell program<br/>(ghc -threaded)"]
+        CP["C program<br/>(gcc -fopenmp)"]
     end
 
-    HS -->|"foreign import\nccall safe"| RT
-    CP -->|"calls\nGOMP_parallel()"| RT
+    HS -->|"foreign import<br/>ccall safe"| RT
+    CP -->|"calls<br/>GOMP_parallel()"| RT
 
     subgraph RT["ghc_omp_runtime_rts.c"]
         direction TB
@@ -180,10 +180,10 @@ flowchart TD
 
     subgraph RTS["GHC Runtime System"]
         direction LR
-        C0["Cap 0\n(master)"]
-        C1["Cap 1\n(worker)"]
-        C2["Cap 2\n(worker)"]
-        C3["Cap 3\n(worker)"]
+        C0["Cap 0<br/>(master)"]
+        C1["Cap 1<br/>(worker)"]
+        C2["Cap 2<br/>(worker)"]
+        C3["Cap 3<br/>(worker)"]
     end
 
     style Host fill:#f9f9f9,stroke:#999
