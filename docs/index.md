@@ -744,6 +744,24 @@ CPU frequency noise, not runtime overhead.
 Near-linear scaling through the FFI boundary, confirming the runtime
 correctly parallelizes work dispatched from Haskell.
 
+### 12.4 Parallelism Crossover (Phase 13)
+
+When does OpenMP from Haskell beat sequential C? We measured sinsum
+(compute-bound, ~11ns per element) at various sizes with 4 threads.
+
+| Elements | Sequential | Parallel | Speedup |
+|---|---|---|---|
+| 100 | 0.5 us | 2.1 us | 0.25x |
+| 200 | 1.3 us | 2.2 us | 0.56x |
+| 500 | 3.6 us | 2.9 us | **1.22x** |
+| 1000 | 7.5 us | 3.9 us | 1.94x |
+| 5000 | 49.0 us | 16.6 us | 2.95x |
+| 100000 | 1132 us | 279 us | 4.06x |
+
+The crossover is at **~500 elements** — above this, OpenMP parallel execution
+from Haskell is faster than sequential C called via unsafe FFI. The fixed
+overhead is ~1.8us (86ns safe FFI + 1712ns OpenMP fork/join).
+
 ---
 
 ## 13. Notable Bugs and Fixes

@@ -54,6 +54,15 @@ double repeated_parallel_sinsum(int n_per_iter, int iters, double *times_us) {
     return total;
 }
 
+/* Sequential sum of sin() — no OpenMP, for crossover analysis */
+double sequential_sinsum(int n) {
+    double sum = 0.0;
+    for (int i = 0; i < n; i++) {
+        sum += sin((double)i * 0.001);
+    }
+    return sum;
+}
+
 /* Dense matrix multiply: C = A * B (row-major, NxN)
  * Parallelizes over rows of C. */
 void parallel_dgemm(const double *A, const double *B, double *C, int n) {

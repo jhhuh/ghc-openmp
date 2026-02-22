@@ -112,3 +112,9 @@ N calls. At batch=100, per-call cost drops to 2.7ns (approaching unsafe FFI).
 2. `"ptr"` annotation on `resumeThread` token → treated as GC root → crash.
 3. `foreign import prim` is pure → GHC CSEs side effects. Fix: thread
    `State# RealWorld`.
+
+## 2026-02-23: Phase 13 — Parallelism crossover
+
+OpenMP from Haskell breaks even at ~500 elements (for ~11ns/element work).
+Fixed overhead ~1.8us (86ns safe FFI + 1712ns fork/join). Near-ideal 4x
+scaling at 100K+ elements.

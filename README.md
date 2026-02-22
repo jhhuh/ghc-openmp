@@ -75,6 +75,7 @@ make demo-callback    # Phase 9: bidirectional interop (OpenMP -> Haskell)
 make demo-cmm         # Phase 10: Cmm primitives calling convention benchmark
 cabal run inline-cmm-demo -- +RTS -N4  # Phase 11: inline-cmm quasiquoter
 make demo-batch       # Phase 12: batched safe calls (27x overhead reduction)
+make demo-crossover   # Phase 13: parallelism crossover analysis
 
 # Run benchmarks
 make bench            # microbenchmarks: native vs RTS
@@ -116,6 +117,7 @@ src/
   HsInlineCmm.hs             # Phase 11: inline-cmm quasiquoter demo
   omp_batch.cmm               # Phase 12: batched safe calls (manual suspend/resume)
   HsCmmBatch.hs               # Phase 12: batch overhead benchmark
+  HsCrossover.hs              # Phase 13: parallelism crossover analysis
   bench_overhead.c           # Microbenchmark suite
   bench_dgemm.c              # DGEMM benchmark (native vs RTS)
   test_omp_basic.c           # Basic OpenMP construct tests

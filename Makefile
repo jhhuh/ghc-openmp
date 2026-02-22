@@ -193,6 +193,18 @@ build/cmm_batch: src/HsCmmBatch.hs build/omp_batch.o build/ghc_omp_runtime_rts.o
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_batch_out
 
+# Phase 13: Parallelism crossover analysis
+build/crossover: src/HsCrossover.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		src/HsCrossover.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-outputdir build/hs_crossover_out
+
+demo-crossover: build/crossover
+	@echo "=== Parallelism Crossover Analysis ==="
+	build/crossover +RTS -N4
+
 demo-batch: build/cmm_batch
 	@echo "=== Batched Safe Calls Demo ==="
 	build/cmm_batch +RTS -N4
