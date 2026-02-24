@@ -95,7 +95,45 @@ test-rts: build/test_omp_rts
 	OMP_NUM_THREADS=4 build/test_omp_rts
 	@echo ""
 
-test-all: test-native test-ghcomp test-rts-embed test-rts demo
+# Phase 18: Guided scheduling test
+build/test_guided_native: src/test_guided.c
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -o $@ $< -lm
+
+build/test_guided_rts: src/test_guided.c build/ghc_omp_runtime_rts.o build/HsStub.o
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -c $< -o build/test_guided_rts.o
+	$(GHC) -threaded -no-hs-main \
+		build/test_guided_rts.o build/ghc_omp_runtime_rts.o build/HsStub.o \
+		-o $@ -lpthread -lm
+
+test-guided: build/test_guided_native build/test_guided_rts
+	@echo "=== Guided: Native libgomp ==="
+	@OMP_NUM_THREADS=4 build/test_guided_native
+	@echo ""
+	@echo "=== Guided: GHC RTS-backed ==="
+	@OMP_NUM_THREADS=4 build/test_guided_rts
+
+# Phase 18: Nested parallelism test
+build/test_nested_native: src/test_nested.c
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -o $@ $<
+
+build/test_nested_rts: src/test_nested.c build/ghc_omp_runtime_rts.o build/HsStub.o
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -c $< -o build/test_nested_rts.o
+	$(GHC) -threaded -no-hs-main \
+		build/test_nested_rts.o build/ghc_omp_runtime_rts.o build/HsStub.o \
+		-o $@ -lpthread -lm
+
+test-nested: build/test_nested_native build/test_nested_rts
+	@echo "=== Nested: Native libgomp ==="
+	@OMP_NUM_THREADS=4 build/test_nested_native
+	@echo ""
+	@echo "=== Nested: GHC RTS-backed ==="
+	@OMP_NUM_THREADS=4 build/test_nested_rts
+
+test-all: test-native test-ghcomp test-rts-embed test-rts demo test-guided test-nested
 
 # ---- Phase 4: Haskell ↔ OpenMP Interop ----
 

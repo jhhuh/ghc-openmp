@@ -16,6 +16,8 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdatomic.h>
+#include <sched.h>
+#include <string.h>
 
 #ifdef GHC_OMP_DEBUG
 #define DBG(fmt, ...) fprintf(stderr, "[ghcomp] " fmt "\n", ##__VA_ARGS__)
@@ -32,7 +34,9 @@
  * ========================================================================= */
 
 #define GHC_OMP_MAX_THREADS 128
-#define SPIN_ITERS 4000  /* spin iterations before falling back to condvar */
+#define SPIN_ITERS_DEFAULT 4000  /* spin iterations before falling back */
+
+static int g_spin_iters = SPIN_ITERS_DEFAULT;
 
 /* =========================================================================
  * Sense-reversing centralized barrier (lock-free)
@@ -63,9 +67,13 @@ static inline void spin_barrier_wait(spin_barrier_t *b, int *local_sense) {
         atomic_store_explicit(&b->count, b->size, memory_order_relaxed);
         atomic_store_explicit(&b->sense, *local_sense, memory_order_release);
     } else {
-        /* Spin until sense flips */
+        /* Hybrid spin-then-yield until sense flips */
+        int spins = 0;
         while (atomic_load_explicit(&b->sense, memory_order_acquire) != *local_sense) {
-            __builtin_ia32_pause();
+            if (++spins < g_spin_iters)
+                __builtin_ia32_pause();
+            else
+                sched_yield();
         }
     }
 }
@@ -73,6 +81,10 @@ static inline void spin_barrier_wait(spin_barrier_t *b, int *local_sense) {
 /* Task queue state — declared early so barriers can steal tasks */
 static atomic_int g_tasks_pending = 0;
 static bool task_try_steal_one(void);
+
+/* Forward declarations for init_rts() */
+static void task_pool_init(void);
+static void task_queues_init(void);
 
 /* Barrier with integrated task stealing.
  * While spinning for other threads, steal and execute queued tasks.
@@ -88,10 +100,16 @@ static inline void spin_barrier_wait_tasks(spin_barrier_t *b, int *local_sense) 
         atomic_store_explicit(&b->count, b->size, memory_order_relaxed);
         atomic_store_explicit(&b->sense, *local_sense, memory_order_release);
     } else {
-        /* Spin until sense flips — steal tasks while waiting */
+        /* Hybrid spin-then-yield — steal tasks while waiting */
+        int spins = 0;
         while (atomic_load_explicit(&b->sense, memory_order_acquire) != *local_sense) {
-            if (!task_try_steal_one())
+            if (task_try_steal_one()) {
+                spins = 0; /* reset after productive work */
+            } else if (++spins < g_spin_iters) {
                 __builtin_ia32_pause();
+            } else {
+                sched_yield();
+            }
         }
     }
 }
@@ -104,6 +122,18 @@ static inline void spin_barrier_wait_tasks(spin_barrier_t *b, int *local_sense) 
 static __thread int tl_thread_num = 0;
 static __thread int tl_num_threads = 1;
 static __thread bool tl_in_parallel = false;
+
+/* Nested parallelism state */
+#define OMP_MAX_NESTING 8
+typedef struct {
+    int thread_num;
+    int num_threads;
+} nesting_level_t;
+
+static __thread int tl_nesting_level = 0;
+static __thread nesting_level_t tl_level_state[OMP_MAX_NESTING];
+static bool g_nested_enabled = false;
+static int g_max_active_levels = 1;
 
 /* Single construct */
 static __thread int tl_single_generation = 0;
@@ -186,7 +216,7 @@ static void *worker_loop(void *arg) {
             if (new_gen != my_gen) break;
             if (!atomic_load_explicit(&g_pool.active,
                                       memory_order_relaxed)) goto done;
-            if (++spins < SPIN_ITERS) {
+            if (++spins < g_spin_iters) {
                 __builtin_ia32_pause();
             } else {
                 /* Fall back to condvar for power efficiency */
@@ -227,6 +257,11 @@ static void *worker_loop(void *arg) {
             tl_barrier_sense = 0; /* reset to match g_omp_barrier */
             start_sense = 0; /* reset to match re-initialized start_barrier */
             end_sense = 0;   /* reset to match re-initialized end_barrier */
+            tl_nesting_level = 1;
+            tl_level_state[0].thread_num = 0;
+            tl_level_state[0].num_threads = 1;
+            tl_level_state[1].thread_num = worker_id;
+            tl_level_state[1].num_threads = num_threads;
 
             /* Sync: all team members ready */
             spin_barrier_wait(&g_pool.start_barrier, &start_sense);
@@ -238,6 +273,7 @@ static void *worker_loop(void *arg) {
             spin_barrier_wait_tasks(&g_pool.end_barrier, &end_sense);
 
             tl_in_parallel = false;
+            tl_nesting_level = 0;
 
             /* Signal completion (atomic, no mutex) */
             atomic_fetch_add_explicit(&g_pool.workers_done, 1,
@@ -270,6 +306,15 @@ static int resolve_num_threads(unsigned requested) {
 }
 
 static void init_rts(void) {
+    /* Parse OMP_WAIT_POLICY */
+    const char *wait_policy = getenv("OMP_WAIT_POLICY");
+    if (wait_policy) {
+        if (strcasecmp(wait_policy, "passive") == 0)
+            g_spin_iters = 100;
+        else if (strcasecmp(wait_policy, "active") == 0)
+            g_spin_iters = 10000;
+    }
+
     /* Determine the number of capabilities */
     int ncaps = resolve_num_threads(0);
     if (ncaps < 1) ncaps = 1;
@@ -328,6 +373,10 @@ static void init_rts(void) {
     pthread_barrier_wait(&g_init_barrier);
     pthread_barrier_destroy(&g_init_barrier);
 
+    /* Initialize task pool and per-Capability queues */
+    task_pool_init();
+    task_queues_init();
+
     DBG("init_rts: done, all workers ready");
 }
 
@@ -365,6 +414,33 @@ void GOMP_parallel(void (*fn)(void *), void *data,
     DBG("GOMP_parallel: enter, num_threads=%u", num_threads);
     ensure_rts();
 
+    /* Nested parallelism: serialize inner regions */
+    if (tl_in_parallel) {
+        DBG("GOMP_parallel: nested region, serializing");
+        /* Save current nesting state */
+        int saved_thread_num = tl_thread_num;
+        int saved_num_threads = tl_num_threads;
+        int saved_level = tl_nesting_level;
+
+        /* Push nesting level */
+        int level = tl_nesting_level + 1;
+        if (level < OMP_MAX_NESTING) {
+            tl_level_state[level].thread_num = 0;
+            tl_level_state[level].num_threads = 1;
+        }
+        tl_nesting_level = level;
+        tl_thread_num = 0;
+        tl_num_threads = 1;
+
+        fn(data);
+
+        /* Restore */
+        tl_nesting_level = saved_level;
+        tl_thread_num = saved_thread_num;
+        tl_num_threads = saved_num_threads;
+        return;
+    }
+
     int nthreads = resolve_num_threads(num_threads);
     if (nthreads < 1) nthreads = 1;
     if (nthreads > g_rts_num_caps) nthreads = g_rts_num_caps;
@@ -375,6 +451,14 @@ void GOMP_parallel(void (*fn)(void *), void *data,
     int saved_thread_num = tl_thread_num;
     int saved_num_threads = tl_num_threads;
     bool saved_in_parallel = tl_in_parallel;
+    int saved_level = tl_nesting_level;
+
+    /* Set nesting level 1 state */
+    tl_nesting_level = 1;
+    tl_level_state[0].thread_num = 0;
+    tl_level_state[0].num_threads = 1;
+    tl_level_state[1].thread_num = 0;
+    tl_level_state[1].num_threads = nthreads;
 
     tl_thread_num = 0;
     tl_num_threads = nthreads;
@@ -433,6 +517,7 @@ void GOMP_parallel(void (*fn)(void *), void *data,
     }
 
     /* Restore */
+    tl_nesting_level = saved_level;
     tl_thread_num = saved_thread_num;
     tl_num_threads = saved_num_threads;
     tl_in_parallel = saved_in_parallel;
@@ -532,8 +617,9 @@ void GOMP_ordered_end(void) { pthread_mutex_unlock(&g_ordered_lock); }
  * GOMP_loop_* — worksharing loops
  * ========================================================================= */
 
-/* Forward declaration */
+/* Forward declarations */
 bool GOMP_loop_dynamic_next(long *istart, long *iend);
+bool GOMP_loop_guided_next(long *istart, long *iend);
 
 static __thread long tl_loop_start;
 static __thread long tl_loop_end;
@@ -624,13 +710,60 @@ bool GOMP_loop_dynamic_next(long *istart, long *iend) {
     return true;
 }
 
+/* Guided scheduling: exponentially-decreasing chunk sizes via CAS */
+static _Atomic long g_guided_remaining = 0;
+static long g_guided_total = 0;
+static long g_guided_start_val = 0;
+static long g_guided_incr = 1;
+static long g_guided_min_chunk = 1;
+
 bool GOMP_loop_guided_start(long start, long end, long incr,
                             long chunk_size, long *istart, long *iend) {
-    return GOMP_loop_dynamic_start(start, end, incr, chunk_size, istart, iend);
+    long total = (end - start + incr - (incr > 0 ? 1 : -1)) / incr;
+    if (total <= 0) return false;
+    if (chunk_size <= 0) chunk_size = 1;
+
+    if (tl_thread_num == 0) {
+        g_guided_total = total;
+        g_guided_start_val = start;
+        g_guided_incr = incr;
+        g_guided_min_chunk = chunk_size;
+        atomic_store_explicit(&g_guided_remaining, total,
+                              memory_order_relaxed);
+    }
+    GOMP_barrier();
+    return GOMP_loop_guided_next(istart, iend);
 }
 
 bool GOMP_loop_guided_next(long *istart, long *iend) {
-    return GOMP_loop_dynamic_next(istart, iend);
+    int nthreads = tl_num_threads;
+    long min_chunk = g_guided_min_chunk;
+    long total = g_guided_total;
+
+    while (1) {
+        long rem = atomic_load_explicit(&g_guided_remaining,
+                                        memory_order_acquire);
+        if (rem <= 0) return false;
+
+        /* Guided: chunk = max(min_chunk, remaining / nthreads) */
+        long chunk = rem / nthreads;
+        if (chunk < min_chunk) chunk = min_chunk;
+        if (chunk > rem) chunk = rem;
+
+        long new_rem = rem - chunk;
+        if (atomic_compare_exchange_weak_explicit(&g_guided_remaining,
+                                                   &rem, new_rem,
+                                                   memory_order_acq_rel,
+                                                   memory_order_acquire)) {
+            /* Claimed [total-rem, total-rem+chunk) */
+            long iter_start = total - rem;
+            long iter_end = iter_start + chunk;
+            *istart = g_guided_start_val + iter_start * g_guided_incr;
+            *iend = g_guided_start_val + iter_end * g_guided_incr;
+            return true;
+        }
+        /* CAS failed, retry with updated rem */
+    }
 }
 
 bool GOMP_loop_runtime_start(long start, long end, long incr,
@@ -661,14 +794,27 @@ void GOMP_parallel_loop_static(void (*fn)(void *), void *data,
 void GOMP_parallel_loop_dynamic(void (*fn)(void *), void *data,
                                 unsigned num_threads, long start, long end,
                                 long incr, long chunk_size, unsigned flags) {
-    (void)start; (void)end; (void)incr; (void)chunk_size;
+    long total = (end - start + incr - (incr > 0 ? 1 : -1)) / incr;
+    if (chunk_size <= 0) chunk_size = 1;
+    g_dynamic_next_iter = 0;
+    g_dynamic_total = total > 0 ? total : 0;
+    g_dynamic_start = start;
+    g_dynamic_incr = incr;
+    g_dynamic_chunk = chunk_size;
     GOMP_parallel(fn, data, num_threads, flags);
 }
 
 void GOMP_parallel_loop_guided(void (*fn)(void *), void *data,
                                unsigned num_threads, long start, long end,
                                long incr, long chunk_size, unsigned flags) {
-    (void)start; (void)end; (void)incr; (void)chunk_size;
+    long total = (end - start + incr - (incr > 0 ? 1 : -1)) / incr;
+    if (chunk_size <= 0) chunk_size = 1;
+    g_guided_total = total > 0 ? total : 0;
+    g_guided_start_val = start;
+    g_guided_incr = incr;
+    g_guided_min_chunk = chunk_size;
+    atomic_store_explicit(&g_guided_remaining, total > 0 ? total : 0,
+                          memory_order_relaxed);
     GOMP_parallel(fn, data, num_threads, flags);
 }
 
@@ -679,12 +825,39 @@ void GOMP_parallel_loop_runtime(void (*fn)(void *), void *data,
     GOMP_parallel(fn, data, num_threads, flags);
 }
 
+/* Nonmonotonic variants (GCC 9+) — identical semantics for our runtime */
+bool GOMP_loop_nonmonotonic_dynamic_start(long start, long end, long incr,
+                                           long chunk_size, long *istart, long *iend) {
+    return GOMP_loop_dynamic_start(start, end, incr, chunk_size, istart, iend);
+}
+bool GOMP_loop_nonmonotonic_dynamic_next(long *istart, long *iend) {
+    return GOMP_loop_dynamic_next(istart, iend);
+}
+bool GOMP_loop_nonmonotonic_guided_start(long start, long end, long incr,
+                                          long chunk_size, long *istart, long *iend) {
+    return GOMP_loop_guided_start(start, end, incr, chunk_size, istart, iend);
+}
+bool GOMP_loop_nonmonotonic_guided_next(long *istart, long *iend) {
+    return GOMP_loop_guided_next(istart, iend);
+}
+void GOMP_parallel_loop_nonmonotonic_dynamic(void (*fn)(void *), void *data,
+                                              unsigned num_threads, long start, long end,
+                                              long incr, long chunk_size, unsigned flags) {
+    GOMP_parallel_loop_dynamic(fn, data, num_threads, start, end, incr,
+                               chunk_size, flags);
+}
+void GOMP_parallel_loop_nonmonotonic_guided(void (*fn)(void *), void *data,
+                                             unsigned num_threads, long start, long end,
+                                             long incr, long chunk_size, unsigned flags) {
+    GOMP_parallel_loop_guided(fn, data, num_threads, start, end, incr,
+                              chunk_size, flags);
+}
+
 /* =========================================================================
  * GOMP_task / GOMP_taskwait — deferred execution with task stealing
  *
- * Tasks with cpyfn are deferred: data is copied to the heap and pushed
- * to a global queue. Other threads steal tasks in GOMP_taskwait and
- * GOMP_barrier. Tasks without cpyfn (stack data) run inline.
+ * Pre-allocated task descriptor pool with per-Capability lock-free queues.
+ * Each thread pushes to its own queue; idle threads steal from others.
  * ========================================================================= */
 
 typedef struct task_entry {
@@ -693,52 +866,170 @@ typedef struct task_entry {
     struct task_entry *next;
 } task_entry_t;
 
-static task_entry_t *g_task_head = NULL;
-static task_entry_t *g_task_tail = NULL;
-static pthread_mutex_t g_task_mutex = PTHREAD_MUTEX_INITIALIZER;
+/* --- Pre-allocated task pool --- */
+#define TASK_POOL_SIZE 4096
+
+static task_entry_t g_task_pool[TASK_POOL_SIZE];
+static _Atomic(task_entry_t *) g_task_freelist = NULL;         /* global overflow */
+static _Atomic(task_entry_t *) g_task_freelists[GHC_OMP_MAX_THREADS]; /* per-cap */
+
+static void task_pool_init(void) {
+    /* Chain all entries into global free list */
+    for (int i = TASK_POOL_SIZE - 1; i >= 0; i--) {
+        g_task_pool[i].next = (i < TASK_POOL_SIZE - 1) ?
+            atomic_load(&g_task_freelist) : NULL;
+        atomic_store(&g_task_freelist, &g_task_pool[i]);
+    }
+}
+
+static inline bool task_is_pooled(task_entry_t *e) {
+    return e >= &g_task_pool[0] && e < &g_task_pool[TASK_POOL_SIZE];
+}
+
+static task_entry_t *task_alloc(void) {
+    int tid = tl_thread_num;
+
+    /* Try per-cap free list first */
+    task_entry_t *e = atomic_load_explicit(&g_task_freelists[tid],
+                                           memory_order_acquire);
+    while (e) {
+        if (atomic_compare_exchange_weak_explicit(&g_task_freelists[tid],
+                                                   &e, e->next,
+                                                   memory_order_acq_rel,
+                                                   memory_order_acquire))
+            return e;
+    }
+
+    /* Try global free list */
+    e = atomic_load_explicit(&g_task_freelist, memory_order_acquire);
+    while (e) {
+        if (atomic_compare_exchange_weak_explicit(&g_task_freelist,
+                                                   &e, e->next,
+                                                   memory_order_acq_rel,
+                                                   memory_order_acquire))
+            return e;
+    }
+
+    /* Fallback to malloc */
+    return malloc(sizeof(task_entry_t));
+}
+
+static void task_free(task_entry_t *e) {
+    if (task_is_pooled(e)) {
+        /* Push to local free list */
+        int tid = tl_thread_num;
+        task_entry_t *head;
+        do {
+            head = atomic_load_explicit(&g_task_freelists[tid],
+                                        memory_order_acquire);
+            e->next = head;
+        } while (!atomic_compare_exchange_weak_explicit(
+            &g_task_freelists[tid], &head, e,
+            memory_order_acq_rel, memory_order_acquire));
+    } else {
+        free(e);
+    }
+}
+
+/* --- Per-Capability task queues with spinlocks --- */
+typedef struct {
+    task_entry_t *head;
+    task_entry_t *tail;
+    atomic_flag lock;
+    char _pad[64 - sizeof(task_entry_t *) * 2 - sizeof(atomic_flag)];
+} task_queue_t;
+
+static task_queue_t g_task_queues[GHC_OMP_MAX_THREADS];
+
+static void task_queues_init(void) {
+    for (int i = 0; i < GHC_OMP_MAX_THREADS; i++) {
+        g_task_queues[i].head = NULL;
+        g_task_queues[i].tail = NULL;
+        atomic_flag_clear(&g_task_queues[i].lock);
+    }
+}
+
+static inline void tq_lock(task_queue_t *q) {
+    while (atomic_flag_test_and_set_explicit(&q->lock, memory_order_acquire))
+        __builtin_ia32_pause();
+}
+
+static inline void tq_unlock(task_queue_t *q) {
+    atomic_flag_clear_explicit(&q->lock, memory_order_release);
+}
 
 static void task_queue_push(void (*fn)(void *), void *data) {
-    task_entry_t *entry = malloc(sizeof(task_entry_t));
+    task_entry_t *entry = task_alloc();
     entry->fn = fn;
     entry->data = data;
     entry->next = NULL;
 
-    pthread_mutex_lock(&g_task_mutex);
-    if (g_task_tail) {
-        g_task_tail->next = entry;
+    int tid = tl_thread_num;
+    task_queue_t *q = &g_task_queues[tid];
+    tq_lock(q);
+    if (q->tail) {
+        q->tail->next = entry;
     } else {
-        g_task_head = entry;
+        q->head = entry;
     }
-    g_task_tail = entry;
-    pthread_mutex_unlock(&g_task_mutex);
+    q->tail = entry;
+    tq_unlock(q);
 
     atomic_fetch_add_explicit(&g_tasks_pending, 1, memory_order_release);
 }
 
-static task_entry_t *task_queue_try_pop(void) {
+/* Pop from own queue */
+static task_entry_t *task_queue_try_pop_local(void) {
+    int tid = tl_thread_num;
+    task_queue_t *q = &g_task_queues[tid];
     task_entry_t *entry = NULL;
-    pthread_mutex_lock(&g_task_mutex);
-    if (g_task_head) {
-        entry = g_task_head;
-        g_task_head = entry->next;
-        if (!g_task_head) g_task_tail = NULL;
+
+    tq_lock(q);
+    if (q->head) {
+        entry = q->head;
+        q->head = entry->next;
+        if (!q->head) q->tail = NULL;
     }
-    pthread_mutex_unlock(&g_task_mutex);
+    tq_unlock(q);
     return entry;
 }
 
-/* Execute tasks from the queue until all pending tasks are complete. */
+/* Steal from another thread's queue */
+static task_entry_t *task_queue_steal(void) {
+    int tid = tl_thread_num;
+    int nthreads = tl_num_threads;
+    /* Linear scan from pseudo-random start, skip self */
+    unsigned start = (unsigned)tid * 2654435761u; /* Knuth multiplicative hash */
+    for (int i = 0; i < nthreads; i++) {
+        int victim = (int)((start + (unsigned)i) % (unsigned)nthreads);
+        if (victim == tid) continue;
+
+        task_queue_t *q = &g_task_queues[victim];
+        task_entry_t *entry = NULL;
+        tq_lock(q);
+        if (q->head) {
+            entry = q->head;
+            q->head = entry->next;
+            if (!q->head) q->tail = NULL;
+        }
+        tq_unlock(q);
+        if (entry) return entry;
+    }
+    return NULL;
+}
+
+/* Execute tasks from all queues until all pending tasks are complete. */
 static void task_drain_queue(void) {
     while (atomic_load_explicit(&g_tasks_pending, memory_order_acquire) > 0) {
-        task_entry_t *entry = task_queue_try_pop();
+        task_entry_t *entry = task_queue_try_pop_local();
+        if (!entry) entry = task_queue_steal();
         if (entry) {
             entry->fn(entry->data);
             free(entry->data);
-            free(entry);
+            task_free(entry);
             atomic_fetch_sub_explicit(&g_tasks_pending, 1,
                                       memory_order_release);
         } else {
-            /* No tasks in queue, but some still executing by other threads */
             __builtin_ia32_pause();
         }
     }
@@ -746,11 +1037,12 @@ static void task_drain_queue(void) {
 
 /* Try to steal one task. Returns true if a task was executed. */
 static bool task_try_steal_one(void) {
-    task_entry_t *entry = task_queue_try_pop();
+    task_entry_t *entry = task_queue_try_pop_local();
+    if (!entry) entry = task_queue_steal();
     if (entry) {
         entry->fn(entry->data);
         free(entry->data);
-        free(entry);
+        task_free(entry);
         atomic_fetch_sub_explicit(&g_tasks_pending, 1,
                                   memory_order_release);
         return true;
@@ -858,8 +1150,8 @@ void omp_set_num_threads(int n) {
 int omp_in_parallel(void) { return tl_in_parallel ? 1 : 0; }
 void omp_set_dynamic(int val) { (void)val; }
 int omp_get_dynamic(void) { return 0; }
-void omp_set_nested(int val) { (void)val; }
-int omp_get_nested(void) { return 0; }
+void omp_set_nested(int val) { g_nested_enabled = (val != 0); }
+int omp_get_nested(void) { return g_nested_enabled ? 1 : 0; }
 
 double omp_get_wtime(void) {
     struct timespec ts;
@@ -897,15 +1189,38 @@ void omp_set_nest_lock(omp_nest_lock_t *lock) { pthread_mutex_lock(lock); }
 void omp_unset_nest_lock(omp_nest_lock_t *lock) { pthread_mutex_unlock(lock); }
 int omp_test_nest_lock(omp_nest_lock_t *lock) { return pthread_mutex_trylock(lock) == 0; }
 
-/* OpenMP 3.0+ */
-int omp_get_level(void) { return tl_in_parallel ? 1 : 0; }
-int omp_get_active_level(void) { return tl_in_parallel ? 1 : 0; }
-int omp_get_ancestor_thread_num(int level) { return (level == 1) ? tl_thread_num : 0; }
-int omp_get_team_size(int level) { return (level == 1) ? tl_num_threads : 1; }
+/* OpenMP 3.0+ nesting support */
+int omp_get_level(void) { return tl_nesting_level; }
+
+int omp_get_active_level(void) {
+    int active = 0;
+    for (int i = 1; i <= tl_nesting_level && i < OMP_MAX_NESTING; i++) {
+        if (tl_level_state[i].num_threads > 1) active++;
+    }
+    return active;
+}
+
+int omp_get_ancestor_thread_num(int level) {
+    if (level < 0 || level > tl_nesting_level) return -1;
+    if (level == 0) return 0;
+    if (level < OMP_MAX_NESTING) return tl_level_state[level].thread_num;
+    return -1;
+}
+
+int omp_get_team_size(int level) {
+    if (level < 0 || level > tl_nesting_level) return -1;
+    if (level == 0) return 1;
+    if (level < OMP_MAX_NESTING) return tl_level_state[level].num_threads;
+    return -1;
+}
+
 int omp_get_thread_limit(void) { return GHC_OMP_MAX_THREADS; }
-void omp_set_max_active_levels(int val) { (void)val; }
-int omp_get_max_active_levels(void) { return 1; }
-int omp_get_supported_active_levels(void) { return 1; }
+
+void omp_set_max_active_levels(int val) {
+    if (val >= 0) g_max_active_levels = val;
+}
+int omp_get_max_active_levels(void) { return g_max_active_levels; }
+int omp_get_supported_active_levels(void) { return OMP_MAX_NESTING; }
 
 typedef enum { omp_sched_static=1, omp_sched_dynamic=2,
                omp_sched_guided=3, omp_sched_auto=4 } omp_sched_t;

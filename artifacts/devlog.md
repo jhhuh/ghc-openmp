@@ -166,3 +166,12 @@ Mellor-Crummey & Scott (1991). Credited `konn/linear-extra`.
 Added section citing BOLT (OpenMP over Argobots) and Argobots. Comparison table
 shows architectural parallel (ES↔Capability, ULT↔green thread). Key difference:
 purpose-built HPC substrate vs repurposed language runtime.
+
+## 2026-02-24: Phase 18 — Five runtime improvements
+
+Inspired by BOLT/Argobots:
+1. True guided scheduling (CAS loop, exponentially-decreasing chunks).
+2. Hybrid spin-sleep barriers (`OMP_WAIT_POLICY` support).
+3. Pre-allocated task descriptor pool (no per-task malloc/free).
+4. Per-Capability task queues with work stealing.
+5. Serialized nested parallelism with level tracking.
