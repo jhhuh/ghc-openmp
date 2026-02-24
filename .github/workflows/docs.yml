@@ -1,0 +1,25 @@
+name: Deploy docs
+
+on:
+  push:
+    branches: [master]
+    paths: [docs/**, flake.nix, flake.lock]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+      - run: nix build .#docs
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: result
+      - id: deployment
+        uses: actions/deploy-pages@v4

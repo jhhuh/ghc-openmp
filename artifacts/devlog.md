@@ -191,3 +191,16 @@ to `flake.nix`. Binary builds via `nix build`, runners via `nix run .#test-all`.
 Reorganized `docs/index.md` from 19 chronological phase-based sections to 13
 thematic sections. All content preserved. Collected scattered benchmark data
 into unified section.
+
+## 2026-02-24: Replace Jekyll + pandoc with Hakyll
+
+**Problem**: Pandoc strips leading numbers from heading IDs, breaking anchor
+links. Jekyll/kramdown keeps them.
+
+**Solution**: Hakyll with `pandocCompilerWithTransform` + custom
+`fixHeadingIds` walking Pandoc AST. GitHub Actions deploys via `nix build .#docs`.
+
+**Gotchas**:
+1. Hakyll in nix needs `glibcLocales` + `LANG=en_US.UTF-8`.
+2. `installPhase` needs `mkdir -p $out` before `cp -r _site/* $out/`.
+3. Switched Pages from branch-based Jekyll to Actions deployment.

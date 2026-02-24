@@ -35,21 +35,22 @@
         # Helper to make a runner script
         mkRunner = name: script: pkgs.writeShellScriptBin name script;
 
+        ghcWithHakyll = pkgs.haskellPackages.ghcWithPackages (p: [ p.hakyll ]);
+
         docs = pkgs.stdenv.mkDerivation {
           pname = "ghc-openmp-docs";
           version = "0.18.0";
           src = ./docs;
-          nativeBuildInputs = [ pkgs.pandoc ];
+          nativeBuildInputs = [ ghcWithHakyll pkgs.glibcLocales ];
           buildPhase = ''
-            pandoc index.md -o index.html \
-              --standalone \
-              --metadata title="GHC's Runtime System as an OpenMP Runtime" \
-              --css=style.css \
-              --include-in-header=_includes/head-custom.html
+            export LANG=en_US.UTF-8
+            export LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive
+            ghc -O2 -threaded -o site site.hs
+            ./site build
           '';
           installPhase = ''
             mkdir -p $out
-            cp index.html style.css $out/
+            cp -r _site/* $out/
           '';
         };
       in
