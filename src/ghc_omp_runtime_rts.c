@@ -103,7 +103,8 @@ static inline void spin_barrier_wait_tasks(spin_barrier_t *b, int *local_sense) 
         /* Hybrid spin-then-yield — steal tasks while waiting */
         int spins = 0;
         while (atomic_load_explicit(&b->sense, memory_order_acquire) != *local_sense) {
-            if (task_try_steal_one()) {
+            if (atomic_load_explicit(&g_tasks_pending, memory_order_acquire) > 0 &&
+                task_try_steal_one()) {
                 spins = 0; /* reset after productive work */
             } else if (++spins < g_spin_iters) {
                 __builtin_ia32_pause();

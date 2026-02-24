@@ -176,6 +176,11 @@ Inspired by BOLT/Argobots:
 4. Per-Capability task queues with work stealing.
 5. Serialized nested parallelism with level tracking.
 
+## 2026-02-24: Fix barrier overhead
+
+`spin_barrier_wait_tasks` was doing task stealing even when no tasks pending,
+adding overhead to every barrier. Fix: check `g_tasks_pending > 0`.
+
 ## 2026-02-24: Nix build support
 
 Added `packages.default` and `apps` (test-all, bench, bench-dgemm, test-tasks)
