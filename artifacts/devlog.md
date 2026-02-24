@@ -160,3 +160,9 @@ Self-contained `Data.Array.Linear` (~200 lines) inspired by
 Added Mermaid charts for 5 key benchmarks + architecture diagram. Fixed
 `\\n` → `<br/>`, invisible `~~~` links for horizontal layout. Cited
 Mellor-Crummey & Scott (1991). Credited `konn/linear-extra`.
+
+## 2026-02-24: Related Work
+
+Added section citing BOLT (OpenMP over Argobots) and Argobots. Comparison table
+shows architectural parallel (ES↔Capability, ULT↔green thread). Key difference:
+purpose-built HPC substrate vs repurposed language runtime.

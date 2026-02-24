@@ -33,8 +33,9 @@ title: "GHC's Runtime System as an OpenMP Runtime"
 15. [Benchmarks](#15-benchmarks)
 16. [Notable Bugs and Fixes](#16-notable-bugs-and-fixes)
 17. [Limitations](#17-limitations)
-18. [Conclusions](#18-conclusions)
-19. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
+18. [Related Work](#18-related-work)
+19. [Conclusions](#19-conclusions)
+20. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
 
 ---
 
@@ -1088,7 +1089,35 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 18. Conclusions
+## 18. Related Work
+
+**BOLT** ([bolt-omp.org](https://www.bolt-omp.org/), Best Paper PACT '19) is
+the closest analogue to this project. BOLT is a full OpenMP runtime built on
+[Argobots](https://www.argobots.org/), a lightweight user-level threading
+library from Argonne National Laboratory. Where libgomp maps OpenMP threads
+to pthreads, BOLT maps them to Argobots *user-level threads* (ULTs) scheduled
+on *execution streams* (ES) — achieving efficient nested parallelism and
+fine-grained tasking that pthreads cannot.
+
+The architectural parallel is direct:
+
+| Concept | BOLT / Argobots | ghc-openmp / GHC RTS |
+|---------|----------------|---------------------|
+| OS-thread abstraction | Execution Stream (ES) | Capability |
+| Lightweight work unit | ULT / Tasklet | Haskell green thread |
+| OpenMP thread mapping | ULT on ES | OS thread pinned to Capability |
+| Scheduler | Pluggable per-pool | GHC spark pool + spin-wait workers |
+| Work stealing | Built-in | Phase 15 deferred tasks |
+
+The key difference is motivation: BOLT starts from a *purpose-built* threading
+substrate (Argobots) designed for composing HPC runtimes (MPI + OpenMP +
+task libraries). ghc-openmp repurposes an *existing language runtime* that
+already provides green threads, garbage collection, and an FFI — trading
+Argobots' generality for seamless Haskell interoperation.
+
+---
+
+## 19. Conclusions
 
 GHC's Runtime System can serve as a fully functional OpenMP runtime with
 **zero measurable overhead** compared to native libgomp. The
