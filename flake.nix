@@ -34,9 +34,28 @@
 
         # Helper to make a runner script
         mkRunner = name: script: pkgs.writeShellScriptBin name script;
+
+        docs = pkgs.stdenv.mkDerivation {
+          pname = "ghc-openmp-docs";
+          version = "0.18.0";
+          src = ./docs;
+          nativeBuildInputs = [ pkgs.pandoc ];
+          buildPhase = ''
+            pandoc index.md -o index.html \
+              --standalone \
+              --metadata title="GHC's Runtime System as an OpenMP Runtime" \
+              --css=style.css \
+              --include-in-header=_includes/head-custom.html
+          '';
+          installPhase = ''
+            mkdir -p $out
+            cp index.html style.css $out/
+          '';
+        };
       in
       {
         packages.default = ghc-openmp;
+        packages.docs = docs;
 
         apps = {
           test-all = flake-utils.lib.mkApp {
@@ -91,6 +110,13 @@
               echo ""
               echo "=== Tasks: GHC RTS-backed ==="
               OMP_NUM_THREADS=4 $p/test_tasks_rts
+            '';
+          };
+
+          docs = flake-utils.lib.mkApp {
+            drv = mkRunner "docs" ''
+              echo "Serving docs at http://localhost:8080"
+              ${pkgs.python3}/bin/python3 -m http.server 8080 -d ${docs}
             '';
           };
 

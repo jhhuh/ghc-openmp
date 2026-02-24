@@ -178,9 +178,9 @@ flowchart TD
         C0["Cap 0<br/>(master)"] ~~~ C1["Cap 1<br/>(worker)"] ~~~ C2["Cap 2<br/>(worker)"] ~~~ C3["Cap 3<br/>(worker)"]
     end
 
-    style Host fill:#f9f9f9,stroke:#999
-    style RT fill:#e8f4e8,stroke:#4a4
-    style RTS fill:#e8e8f4,stroke:#44a
+    style Host fill:#f8fafc,stroke:#94a3b8,stroke-width:2px
+    style RT fill:#ecfdf5,stroke:#059669,stroke-width:2px
+    style RTS fill:#eff6ff,stroke:#2563eb,stroke-width:2px
     style r1 fill:none,stroke:none
     style r2 fill:none,stroke:none
 </pre>
@@ -317,6 +317,7 @@ After optimization, the RTS-backed runtime **matches or beats**
 native libgomp on all benchmarks.
 
 <pre class="mermaid">
+%%{init: {'theme':'neutral','themeVariables':{'xyChart':{'plotColorPalette':'#ef4444,#059669,#64748b'}}}}%%
 xychart-beta horizontal
   title "Optimization Journey: Phase 2 → Phase 3 (4 threads, us)"
   x-axis ["Fork/join", "Barrier"]
@@ -776,6 +777,7 @@ Interleaved re-runs confirm the two runtimes trade leads: the difference is
 CPU frequency noise, not runtime overhead.
 
 <pre class="mermaid">
+%%{init: {'theme':'neutral','themeVariables':{'xyChart':{'plotColorPalette':'#64748b,#2563eb'}}}}%%
 xychart-beta
   title "DGEMM Head-to-Head: Native libgomp vs RTS (4 threads, ms)"
   x-axis "Matrix size" ["N=128", "N=256", "N=512", "N=1024"]
@@ -825,6 +827,7 @@ from Haskell is faster than sequential C called via unsafe FFI. The fixed
 overhead is ~1.8us (86ns safe FFI + 1712ns OpenMP fork/join).
 
 <pre class="mermaid">
+%%{init: {'theme':'neutral','themeVariables':{'xyChart':{'plotColorPalette':'#d97706,#2563eb'}}}}%%
 xychart-beta
   title "Parallelism Crossover: Sequential vs Parallel (4 threads)"
   x-axis "Elements" ["100", "200", "500", "1K", "5K", "100K"]
@@ -874,6 +877,7 @@ sequential reference with exact match.
 | `foreign import ccall safe` | 67.5 | 29x vs unsafe | + suspendThread/resumeThread |
 
 <pre class="mermaid">
+%%{init: {'theme':'neutral','themeVariables':{'xyChart':{'plotColorPalette':'#2563eb'}}}}%%
 xychart-beta
   title "FFI Calling Convention Overhead (ns/call)"
   x-axis ["prim (Cmm)", "ccall unsafe", "ccall safe"]
@@ -901,6 +905,7 @@ cost (~2 ns). The results match the theoretical prediction `(68 + N × 2) / N`
 closely at every batch size.
 
 <pre class="mermaid">
+%%{init: {'theme':'neutral','themeVariables':{'xyChart':{'plotColorPalette':'#059669,#94a3b8'}}}}%%
 xychart-beta
   title "Batched Safe Calls: Per-Call Overhead (ns)"
   x-axis "Batch size" ["1", "2", "5", "10", "20", "50", "100"]
