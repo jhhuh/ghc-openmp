@@ -185,3 +185,9 @@ adding overhead to every barrier. Fix: check `g_tasks_pending > 0`.
 
 Added `packages.default` and `apps` (test-all, bench, bench-dgemm, test-tasks)
 to `flake.nix`. Binary builds via `nix build`, runners via `nix run .#test-all`.
+
+## 2026-02-24: Restructure docs from chronological to thematic
+
+Reorganized `docs/index.md` from 19 chronological phase-based sections to 13
+thematic sections. All content preserved. Collected scattered benchmark data
+into unified section.

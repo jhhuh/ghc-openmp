@@ -20,22 +20,16 @@ title: "GHC's Runtime System as an OpenMP Runtime"
 2. [Motivation](#2-motivation)
 3. [Background](#3-background)
 4. [Architecture](#4-architecture)
-5. [Implementation Phases](#5-implementation-phases)
-6. [Optimization: From 24x Slower to Parity](#6-optimization-from-24x-slower-to-parity)
-7. [Haskell Interop](#7-haskell-interop)
-8. [Garbage Collection Interaction](#8-garbage-collection-interaction)
-9. [Bidirectional Interop](#9-bidirectional-interop)
-10. [Cmm Primitives](#10-cmm-primitives)
-11. [Batched Safe Calls via Cmm](#11-batched-safe-calls-via-cmm)
-12. [Deferred Task Execution](#12-deferred-task-execution)
-13. [Zero-Copy FFI with Pinned ByteArray](#13-zero-copy-ffi-with-pinned-bytearray)
-14. [Linear Typed Arrays](#14-linear-typed-arrays)
-15. [Benchmarks](#15-benchmarks)
-16. [Notable Bugs and Fixes](#16-notable-bugs-and-fixes)
-17. [Limitations](#17-limitations)
-18. [Related Work](#18-related-work)
-19. [Conclusions](#19-conclusions)
-20. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
+5. [Optimization: From 24x Slower to Parity](#5-optimization-from-24x-slower-to-parity)
+6. [Haskell Integration](#6-haskell-integration)
+7. [Low-Level Techniques](#7-low-level-techniques)
+8. [Benchmarks](#8-benchmarks)
+9. [Implementation Timeline](#9-implementation-timeline)
+10. [Notable Bugs and Fixes](#10-notable-bugs-and-fixes)
+11. [Limitations](#11-limitations)
+12. [Related Work](#12-related-work)
+13. [Conclusions](#13-conclusions)
+14. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
 
 ---
 
@@ -149,8 +143,6 @@ The [`inline-cmm`](https://github.com/jhhuh/inline-cmm) library lets you
 embed Cmm code directly in Haskell modules via a `[cmm| ... |]` quasiquoter
 (similar to `inline-c` for C code). It automatically generates the
 `foreign import prim` declaration and compiles the Cmm via Template Haskell.
-In Phase 10, we write Cmm primitives by hand using the same mechanism
-that `inline-cmm` automates.
 
 ---
 
@@ -197,6 +189,10 @@ flowchart TD
 GHC Capabilities. After `rts_lock()`/`rts_unlock()` init, they do NOT
 hold Capabilities — invisible to GC.*
 
+> **Design decision**: We chose a hybrid approach — a C shim calling GHC RTS
+> APIs — over modifying GHC's RTS source directly or using `foreign export`.
+> This keeps the runtime as a single `.c` file with no GHC fork required.
+
 ### 4.1 Worker Pool Design
 
 N-1 worker threads are created at initialization. Each is pinned to a GHC
@@ -220,189 +216,55 @@ fully lock-free on the fast path.
 
 Workers use a **spin-then-sleep** strategy: spin for ~4000
 iterations (configurable via `OMP_WAIT_POLICY`: passive=100,
-active=10000) on the generation counter (using `_mm_pause`), then fall
-back to a `pthread_cond_wait` for power efficiency during idle
-periods.
+active=10000) on the generation counter (using `_mm_pause`), then
+`sched_yield()` after the spin threshold, then fall back to a
+`pthread_cond_wait` for power efficiency during idle periods.
+
+Worksharing loops support static, dynamic, guided, and runtime scheduling.
+**Guided scheduling** uses a CAS-based loop with exponentially-decreasing
+chunk sizes (`remaining / nthreads`), giving large initial chunks and
+progressively smaller ones for load balancing.
+
+**Serialized nested parallelism**: Inner parallel regions execute with 1
+thread. Full `omp_get_level()`, `omp_get_active_level()`,
+`omp_get_ancestor_thread_num()`, and `omp_get_team_size()` support with
+per-thread nesting state up to 8 levels deep.
+
+### 4.3 Task Queues and Work Stealing
+
+OpenMP tasks (`#pragma omp task`) enable fork-join parallelism where one
+thread creates work items and other threads steal them. Our runtime supports
+deferred execution: tasks are queued to per-Capability work-stealing queues
+and executed by idle threads waiting at barriers.
+
+Each Capability has its own task queue protected by an `atomic_flag` spinlock,
+with an atomic pending counter for fast-path bypass:
+
+- **GOMP_task**: When `if_clause` is true and we're in a parallel region,
+  copies data to heap (via `cpyfn` or `memcpy`) and pushes to the local
+  queue. Otherwise executes inline. Task descriptors are allocated from a
+  pre-allocated pool (4096 entries) with per-Capability lock-free free lists.
+- **Work stealing**: Idle threads first pop from their own queue, then steal
+  from other threads' queues via linear scan from a pseudo-random start.
+- **Barrier task stealing**: `spin_barrier_wait_tasks` checks
+  `g_tasks_pending` before attempting steals (avoiding expensive atomic
+  operations when no tasks exist). The last thread arriving drains remaining
+  tasks before releasing the barrier.
+- **End-of-parallel stealing**: The pool's end-barrier uses the task-stealing
+  variant, since GCC may omit explicit `GOMP_barrier` calls after
+  `#pragma omp single`.
+
+Benchmark results are in [Section 8.6](#86-task-execution).
 
 ---
 
-## 5. Implementation Phases
-
-**Phase 1 — Stub Runtime (pthread-based)**
-
-A shared library (`libghcomp.so`) implementing the GOMP ABI using
-raw pthreads. Validates ABI compatibility: a standard
-`gcc -fopenmp` test program links against our library and runs
-correctly. This phase establishes the full API surface without GHC
-involvement.
-
-**Phase 2 — GHC RTS Integration**
-
-Replace the pthread thread pool with GHC Capabilities. Workers are created
-via `pthread_create` but immediately pin themselves to Capabilities.
-The RTS is booted on first use via `hs_init_ghc()`. A mutex+condvar
-dispatch mechanism wakes workers for each parallel region.
-
-> **Design decision**: We chose a hybrid approach (Option D) —
-> a C shim calling GHC RTS APIs — over modifying GHC's RTS source directly
-> or using `foreign export`. This keeps the runtime as a single
-> `.c` file with no GHC fork required.
-
-**Phase 3 — Lock-free Optimization**
-
-Phase 2 benchmarks showed 20–25x overhead on fork/join and 14x on barriers
-versus native libgomp, all from mutex+condvar synchronization. Four
-optimizations brought performance to parity:
-
-| Optimization | Combined Result |
-|---|---|
-| Atomic generation counter (lock-free dispatch) | Fork/join: 24.35 → 0.81 us (**30x**) |
-| Spin-wait with condvar fallback (4000 iters) | Barrier: 7.01 → 0.25 us (**28x**) |
-| Sense-reversing centralized barriers | |
-| Atomic completion counter | |
-
-**Phase 4 — Haskell FFI Interop**
-
-A Haskell program calls OpenMP-parallelized C functions (dot product, SAXPY,
-sin sum) via `foreign import ccall safe`. GHC releases the calling
-Capability during the FFI call, allowing our runtime to use it. Verified
-correctness against pure Haskell implementations and measured near-linear
-scaling up to 8 threads.
-
-**Phase 5 — Concurrent Haskell + OpenMP**
-
-Demonstrates that Haskell green threads and OpenMP parallel regions run
-simultaneously on the same RTS. A pure Haskell computation runs in one
-`forkIO` thread while an OpenMP FFI call runs in another. The safe
-FFI call releases its Capability, so Haskell threads are not starved.
-
-Result: sequential time 68ms → concurrent time 58ms (1.17x speedup),
-with 10ms of verified overlap.
-
-**Phase 6 — GC Interaction Test**
-
-Runs 500 short OpenMP parallel regions concurrently with either allocation
-pressure (triggering minor GCs) or forced major GCs. Measures per-region
-latency impact. Finding: GC has **minimal impact** on OpenMP tail
-latency (worst p99: 1.17x, worst max: 3.27x on one run, none on another).
-
-**Phase 7 — Dense Matrix Multiply**
-
-A real numerical workload: NxN dense matrix multiplication (DGEMM) with
-OpenMP parallel for, called from Haskell. Tests sustained parallel computation
-with large memory footprint. Results: 3–6x speedup over sequential Haskell at
-4 threads across 128–1024 matrix sizes, all results verified correct.
-
-**Phase 8 — Head-to-Head Comparison**
-
-The same DGEMM code compiled against native libgomp and our RTS-backed
-runtime. Identical checksums, indistinguishable performance. Details in
-[Section 11.2](#112-dgemm-head-to-head-phase-8).
-
-**Phase 9 — Bidirectional Interop**
-
-OpenMP workers call back into Haskell via `FunPtr`. The
-`foreign import ccall "wrapper"` stub automatically handles
-Capability acquisition. All results verified correct; overhead is ~0.5us
-per callback (the `rts_lock/rts_unlock` round-trip). Details in
-[Section 9](#9-bidirectional-interop).
-
-**Phase 10 — Cmm Primitives**
-
-Uses GHC's Cmm intermediate representation to write primitives callable via
-`foreign import prim` — the fastest possible calling convention.
-Benchmarks the three FFI tiers: prim (~0ns, optimized away by GHC),
-unsafe (~2ns), safe (~68ns). The 29x safe/unsafe ratio quantifies the
-exact cost of Capability release/reacquire per call.
-Details in [Section 10](#10-cmm-primitives).
-
-**Phase 11 — inline-cmm Integration**
-
-Integrates the [`inline-cmm`](https://github.com/jhhuh/inline-cmm) library,
-which provides a `[cmm| ... |]` quasiquoter for embedding Cmm code directly
-in Haskell modules. Eliminates the need for separate `.cmm` files, manual
-`foreign import prim` declarations, and Makefile targets. Template Haskell
-handles compilation and linking automatically. Produces identical zero-overhead
-results as the hand-written Phase 10 primitives.
-
-**Phase 12 — Batched Safe Calls via Cmm**
-
-Amortizes the ~68ns safe FFI overhead by batching multiple C calls within a
-single `suspendThread`/`resumeThread` cycle, written manually in Cmm. At
-batch=100, per-call overhead drops to 2.7ns — approaching unsafe FFI cost
-(~2ns) for a 27x speedup. Details in
-[Section 11](#11-batched-safe-calls-via-cmm).
-
-**Phase 13 — Parallelism Crossover Analysis**
-
-Measures the break-even point between sequential unsafe FFI and parallel safe
-FFI. The crossover occurs at ~500 elements for sinsum workloads: below this,
-the ~1.8us OpenMP fork/join overhead exceeds the parallelism benefit. Details
-in [Section 13](#13-benchmarks).
-
-**Phase 14 — GHC Native Parallelism vs OpenMP**
-
-Compares Haskell's `forkIO` parallelism against OpenMP for CPU-bound work.
-OpenMP achieves ~2x higher throughput consistently, because it avoids GHC's
-per-task overhead (spark creation, thread scheduling, Capability contention).
-
-**Phase 15 — Deferred Task Execution**
-
-Implements OpenMP task queue with work-stealing barriers. Tasks created via
-`#pragma omp task` are deferred to a global queue and stolen by idle threads.
-Achieves 3.4–4.0x speedup on 4 threads with exact correctness match. Details
-in [Section 12](#12-deferred-task-execution).
-
-**Phase 16 — Zero-Copy FFI with Pinned ByteArray**
-
-Eliminates boxing overhead at the Haskell↔OpenMP boundary. Uses pinned
-`ByteArray#` with `writeDoubleArray#`/`readDoubleArray#` primops instead of
-`allocaArray`/`peekElemOff`/`pokeElemOff`. Data passes to C via
-`mutableByteArrayContents#` — zero marshalling. DGEMM inner loop 19% faster
-at N=512. Details in [Section 13](#13-zero-copy-ffi-with-pinned-bytearray).
-
-**Phase 17 — Linear Typed Arrays**
-
-Builds on Phase 16's pinned ByteArray with linear types (`-XLinearTypes`) to
-enforce disjoint ownership at compile time. Inspired by
-[`konn/linear-extra`](https://github.com/konn/linear-extra)'s Borrowable
-`SArray`, a self-contained ~200-line module (`Data.Array.Linear`) provides
-`RW s` tokens for exclusive access and zero-copy `split`/`combine` for
-partitioning arrays into disjoint regions.
-Demonstrates type-safe row-partitioned DGEMM where each half of the output
-matrix is computed independently — the type system statically prevents
-aliased writes. Details in [Section 14](#14-linear-typed-arrays).
-
-**Phase 18 — Runtime Improvements**
-
-Five targeted improvements to close remaining overhead gaps:
-
-1. **True guided scheduling**: CAS-based loop with exponentially-decreasing
-   chunk sizes (`remaining / nthreads`), replacing the previous delegation to
-   dynamic scheduling.
-2. **Hybrid spin-sleep barriers**: Configurable spin count via `OMP_WAIT_POLICY`
-   (passive=100, active=10000, default=4000), with `sched_yield()` fallback
-   after the spin threshold.
-3. **Pre-allocated task descriptor pool**: A static pool of 4096 `task_entry_t`
-   descriptors with per-Capability lock-free free lists, eliminating
-   `malloc`/`free` per task.
-4. **Per-Capability task queues**: Each thread pushes to its own
-   `atomic_flag`-spinlocked queue. Idle threads steal from others via linear
-   scan. Replaces the Phase 15 global `pthread_mutex` queue.
-5. **Serialized nested parallelism**: Inner parallel regions execute with 1
-   thread. Full `omp_get_level()`, `omp_get_active_level()`,
-   `omp_get_ancestor_thread_num()`, and `omp_get_team_size()` support with
-   per-thread nesting state up to 8 levels deep.
-
----
-
-## 6. Optimization: From 24x Slower to Parity
+## 5. Optimization: From 24x Slower to Parity
 
 The Phase 2 runtime was functional but slow: fork/join took 24 us vs
 libgomp's 1 us. The bottleneck was mutex+condvar on every operation. We
 eliminated all locks from the hot path:
 
-### 6.1 Lock-free Work Dispatch
+### 5.1 Lock-free Work Dispatch
 
 ```c
 // Master: store work, then release-fence generation increment
@@ -418,7 +280,7 @@ while (atomic_load(&g_pool.generation, memory_order_acquire) == my_gen)
 No mutex on the hot path. The condvar broadcast is only for workers that
 fell asleep after 4000 spin iterations.
 
-### 6.2 Sense-Reversing Barrier
+### 5.2 Sense-Reversing Barrier
 
 The sense-reversing centralized barrier follows Mellor-Crummey & Scott's
 algorithm (*"Algorithms for Scalable Synchronization on Shared-Memory
@@ -442,7 +304,7 @@ void spin_barrier_wait(spin_barrier_t *b, int *local_sense) {
 Pure atomic operations, no locks. The centralized design has O(N) wakeup but
 is optimal for small team sizes (typical OpenMP use).
 
-### 6.3 Results
+### 5.3 Results
 
 | Metric (4 threads) | Phase 2 | Phase 3 | Native libgomp |
 |---|---|---|---|
@@ -466,9 +328,13 @@ xychart-beta horizontal
 
 ---
 
-## 7. Haskell Interop
+## 6. Haskell Integration
 
-### 7.1 FFI Calling Convention
+This section covers the integration between Haskell and the OpenMP runtime:
+calling conventions, initialization, concurrent execution, garbage collection
+behavior, and bidirectional callbacks.
+
+### 6.1 FFI Calling Convention
 
 Haskell calls OpenMP C code via `foreign import ccall safe`:
 
@@ -487,7 +353,7 @@ return. This means:
 - No deadlock: workers don't need to hold Capabilities to execute C
   compute kernels
 
-### 7.2 RTS Initialization: Reference Counting
+### 6.2 RTS Initialization
 
 When called from a Haskell host, `hs_init_ghc()` is already done
 by GHC before `main`. Our runtime's `ensure_rts()` calls
@@ -495,7 +361,7 @@ by GHC before `main`. Our runtime's `ensure_rts()` calls
 and returns. The runtime discovers the existing Capabilities via
 `getNumCapabilities()` and spawns workers for Caps 1..N-1.
 
-### 7.3 Concurrent Execution
+### 6.3 Concurrent Execution
 
 ```haskell
 -- Haskell green thread: pure computation
@@ -514,9 +380,7 @@ _ <- forkIO $ do
 Measured: sequential 68ms → concurrent 58ms, with 10ms of overlapping
 execution confirmed.
 
----
-
-## 8. Garbage Collection Interaction
+### 6.4 Garbage Collection Isolation
 
 A key concern: GHC's stop-the-world GC pauses all threads holding
 Capabilities. Would this stall OpenMP workers?
@@ -527,7 +391,7 @@ Capabilities. Would this stall OpenMP workers?
 > spinning on atomic variables. GC only synchronizes Capability-holding threads
 > — our workers are invisible.
 
-### 8.1 Experimental Validation
+#### Experimental Validation
 
 We ran 500 OpenMP parallel regions (each ~400us) concurrently with:
 
@@ -545,15 +409,12 @@ boundary.
 
 GHC RTS statistics: 99.7% productivity, GC time <0.5% of elapsed.
 
----
+### 6.5 Bidirectional Callbacks
 
-## 9. Bidirectional Interop
+The previous sections demonstrated Haskell calling OpenMP. **OpenMP workers
+can also call back into Haskell** from within a parallel region.
 
-Phases 4–7 demonstrated Haskell calling OpenMP. Phase 9 completes the
-picture: **OpenMP workers calling back into Haskell** from within
-a parallel region.
-
-### 9.1 Mechanism
+#### Mechanism
 
 Haskell creates a `FunPtr` via
 `foreign import ccall "wrapper"`:
@@ -591,7 +452,7 @@ void parallel_reduce_callback(hs_callback_t callback, int n) {
 }
 ```
 
-### 9.2 Correctness
+#### Correctness
 
 All results verified against pure C and pure Haskell reference
 implementations:
@@ -602,7 +463,7 @@ implementations:
 | parallel_reduce (100K sin sum) | 1839.343386 (matches pure C) | OK |
 | polynomial callback (10K) | 1109840.005000 (matches Haskell) | OK |
 
-### 9.3 Performance
+#### Performance
 
 | Threads | Pure C (ms) | Callback (ms) | Overhead | Per-callback |
 |---|---|---|---|---|
@@ -625,13 +486,20 @@ instead.
 
 ---
 
-## 10. Cmm Primitives
+## 7. Low-Level Techniques
+
+This section describes advanced techniques for reducing overhead at the
+Haskell-C boundary: zero-overhead Cmm primitives, batched FFI calls,
+zero-copy data passing, and linear types for safe mutable array partitioning.
+
+### 7.1 Cmm Primitives
 
 GHC provides three calling conventions for foreign code, each with different
 overhead. We wrote a Cmm primitive that reads `Capability_no(MyCapability())`
-— the same value as `omp_get_thread_num()` — and benchmarked all three tiers.
+— the same value as `omp_get_thread_num()` — to measure the overhead of each
+tier (see [Section 8.7](#87-calling-convention-overhead)).
 
-### 10.1 The Cmm Primitive
+#### The Cmm Primitive
 
 ```cmm
 #include "Cmm.h"
@@ -647,23 +515,12 @@ Called from Haskell via:
 foreign import prim "omp_prim_cap_no" primCapNo# :: Int# -> Int#
 ```
 
-### 10.2 Calling Convention Overhead
+The [`inline-cmm`](https://github.com/jhhuh/inline-cmm) library provides a
+`[cmm| ... |]` quasiquoter that eliminates the need for separate `.cmm` files
+and manual `foreign import prim` declarations — Template Haskell handles
+compilation and linking automatically, producing identical zero-overhead results.
 
-| Convention | ns/call | Relative | Mechanism |
-|---|---|---|---|
-| `foreign import prim` (Cmm) | ~0 | — | Direct register read, GHC optimizes away |
-| `foreign import ccall unsafe` | 2.3 | — | Save/restore STG registers |
-| `foreign import ccall safe` | 67.5 | 29x vs unsafe | + suspendThread/resumeThread |
-
-<pre class="mermaid">
-xychart-beta
-  title "FFI Calling Convention Overhead (ns/call)"
-  x-axis ["prim (Cmm)", "ccall unsafe", "ccall safe"]
-  y-axis "Latency (ns)" 0 --> 70
-  bar [0.1, 2.3, 67.5]
-</pre>
-
-### 10.3 Key Findings
+#### Key Findings
 
 **Prim calls are truly free**: GHC treats `foreign import prim` functions as
 pure expressions. The Cmm function compiles to a single memory load from
@@ -675,16 +532,14 @@ more than `unsafe` — the price of `suspendThread()`/`resumeThread()` which
 release and reacquire the Capability. For OpenMP regions doing >1us of work,
 this is negligible (<7%).
 
-**The callback overhead gap**: Phase 9's ~500ns per callback overhead is ~7x
-larger than the raw safe FFI cost (~68ns). The difference comes from
-`rts_lock()/rts_unlock()` performing additional work beyond
-`suspendThread()/resumeThread()`: Task structure allocation, global Capability
-search, and lock acquisition. A Cmm-level fast path could potentially reduce
-this.
+**The callback overhead gap**: The ~500ns per callback overhead from
+[Section 6.5](#65-bidirectional-callbacks) is ~7x larger than the raw safe FFI
+cost (~68ns). The difference comes from `rts_lock()/rts_unlock()` performing
+additional work beyond `suspendThread()/resumeThread()`: Task structure
+allocation, global Capability search, and lock acquisition. A Cmm-level fast
+path could potentially reduce this.
 
----
-
-## 11. Batched Safe Calls via Cmm
+### 7.2 Batched Safe Calls
 
 The safe FFI tax of ~68ns per call comes from `suspendThread()`/`resumeThread()`,
 which release and reacquire the Capability. For workloads that make many short
@@ -694,7 +549,7 @@ By writing the suspend/resume manually in Cmm, we can batch N C calls within
 a single Capability release/reacquire cycle, amortizing the ~68ns overhead
 across all N calls.
 
-### 11.1 The Batching Primitive
+#### The Batching Primitive
 
 ```cmm
 #include "Cmm.h"
@@ -729,7 +584,7 @@ loop_check:
 }
 ```
 
-### 11.2 Implementation Details
+#### Implementation Details
 
 Three details were critical for correctness:
 
@@ -746,91 +601,26 @@ Three details were critical for correctness:
    signature makes GHC treat it as effectful while adding zero runtime cost
    (State# is erased at the Cmm level).
 
-### 11.3 Results
+Benchmark results showing speedups up to 27x are in
+[Section 8.8](#88-batched-calls).
 
-| Batch size | Standard safe | Cmm batched | Speedup |
-|---|---|---|---|
-| 1 | 72.4 ns | 69.1 ns | 1.0x |
-| 2 | 71.3 ns | 36.1 ns | 2.0x |
-| 5 | 73.0 ns | 15.2 ns | 4.8x |
-| 10 | 71.0 ns | 8.7 ns | 8.2x |
-| 20 | 71.1 ns | 5.3 ns | 13.5x |
-| 50 | 71.7 ns | 3.4 ns | 21.1x |
-| 100 | 71.4 ns | 2.7 ns | 26.8x |
+### 7.3 Zero-Copy FFI with Pinned ByteArray
 
-At batch=100, per-call overhead drops to 2.7 ns — within 35% of unsafe FFI
-cost (~2 ns). The results match the theoretical prediction `(68 + N × 2) / N`
-closely at every batch size.
-
-<pre class="mermaid">
-xychart-beta
-  title "Batched Safe Calls: Per-Call Overhead (ns)"
-  x-axis "Batch size" ["1", "2", "5", "10", "20", "50", "100"]
-  y-axis "ns/call" 0 --> 75
-  line "Cmm batched" [69.1, 36.1, 15.2, 8.7, 5.3, 3.4, 2.7]
-  line "Standard safe" [72.4, 71.3, 73.0, 71.0, 71.1, 71.7, 71.4]
-</pre>
-
----
-
-## 12. Deferred Task Execution
-
-OpenMP tasks (`#pragma omp task`) enable fork-join parallelism where one
-thread creates work items and other threads steal them. Our runtime supports
-deferred execution: tasks are queued to a global work-stealing queue and
-executed by idle threads waiting at barriers.
-
-### 12.1 Implementation
-
-Each Capability has its own task queue protected by an `atomic_flag` spinlock,
-with an atomic pending counter for fast-path bypass:
-
-- **GOMP_task**: When `if_clause` is true and we're in a parallel region,
-  copies data to heap (via `cpyfn` or `memcpy`) and pushes to the local
-  queue. Otherwise executes inline. Task descriptors are allocated from a
-  pre-allocated pool (4096 entries) with per-Capability lock-free free lists.
-- **Work stealing**: Idle threads first pop from their own queue, then steal
-  from other threads' queues via linear scan from a pseudo-random start.
-- **Barrier task stealing**: `spin_barrier_wait_tasks` checks
-  `g_tasks_pending` before attempting steals (avoiding expensive atomic
-  operations when no tasks exist). The last thread arriving drains remaining
-  tasks before releasing the barrier.
-- **End-of-parallel stealing**: The pool's end-barrier uses the task-stealing
-  variant, since GCC may omit explicit `GOMP_barrier` calls after
-  `#pragma omp single`.
-
-### 12.2 Results (4 threads, best of 5)
-
-| Tasks | Sequential | Parallel | Speedup |
-|------:|-----------:|---------:|--------:|
-| 100   | 1.7 ms     | 0.3 ms   | 5.41x   |
-| 500   | 5.7 ms     | 1.5 ms   | 3.86x   |
-| 1,000 | 11.3 ms    | 2.9 ms   | 3.88x   |
-| 5,000 | 57.5 ms    | 14.3 ms  | 4.03x   |
-| 10,000| 112.2 ms   | 32.7 ms  | 3.43x   |
-
-Near-linear scaling (3.4-4.0x on 4 threads). Correctness verified against
-sequential reference with exact match.
-
----
-
-## 13. Zero-Copy FFI with Pinned ByteArray
-
-Phase 16 eliminates boxing overhead at the Haskell↔OpenMP boundary. The standard
-FFI pattern (`allocaArray` + `peekElemOff`/`pokeElemOff`) boxes every element as
-`CDouble` and converts via `realToFrac`:
+The standard FFI pattern (`allocaArray` + `peekElemOff`/`pokeElemOff`) boxes
+every element as `CDouble` and converts via `realToFrac`, adding overhead at
+the Haskell↔OpenMP boundary:
 
 ```haskell
--- Phase 7 (boxed): every element goes through CDouble
+-- Boxed: every element goes through CDouble
 a <- peekElemOff pA (i * n + k)    -- returns boxed CDouble
 b <- peekElemOff pB (k * n + j)    -- returns boxed CDouble
 go (acc + realToFrac a * realToFrac b) (k + 1)  -- 4 box/unbox ops
 ```
 
-Phase 16 uses pinned `ByteArray#` with unboxed primops:
+Using pinned `ByteArray#` with unboxed primops eliminates this overhead:
 
 ```haskell
--- Phase 16 (unboxed): Double# throughout, no boxing
+-- Unboxed: Double# throughout, no boxing
 case readDoubleArray# mbaA (i *# n +# k) s of
     (# s', a #) ->     -- a :: Double# (unboxed)
         case readDoubleArray# mbaB (k *# n +# j) s' of
@@ -842,34 +632,24 @@ The pinned ByteArray is passed to C via `mutableByteArrayContents#`, which
 returns a raw `Addr#` — zero-copy, no marshalling. `touch#` keeps the
 ByteArray alive during the C call.
 
-**Haskell Sequential DGEMM (inner loop improvement):**
+Performance measurements are in [Section 8.9](#89-zero-copy-improvement).
 
-| N | Boxed (ms) | Unboxed (ms) | Speedup |
-|--:|-----------:|-------------:|--------:|
-| 256 | 57.3 | 53.4 | 1.07x |
-| 512 | 457.9 | 384.6 | **1.19x** |
+### 7.4 Linear Typed Arrays
 
-The 19% improvement at N=512 comes from eliminating `CDouble` boxing in the
-O(n³) inner loop. `-ddump-simpl` confirms the hot loop uses `+##`, `*##`, and
-`readDoubleArray#` with no `D#` constructor.
-
----
-
-## 14. Linear Typed Arrays
-
-Phase 17 uses GHC's `-XLinearTypes` extension to enforce exclusive ownership
+GHC's `-XLinearTypes` extension can enforce exclusive ownership
 of mutable array regions at compile time. The design is inspired by
 [`konn/linear-extra`](https://github.com/konn/linear-extra)'s Borrowable
-`SArray`, which uses phantom-tagged tokens for zero-copy split/combine. We
-extract the core pattern (~200 lines, no external dependencies) and integrate
-it with Phase 16's unboxed primops (`readDoubleArray#`/`writeDoubleArray#`
-instead of `Storable`).
+`SArray`, which uses phantom-tagged tokens for zero-copy split/combine. A
+self-contained ~200-line module (`Data.Array.Linear`) extracts the core pattern
+and integrates it with the unboxed primops from
+[Section 7.3](#73-zero-copy-ffi-with-pinned-bytearray)
+(`readDoubleArray#`/`writeDoubleArray#` instead of `Storable`).
 
 The core idea: linearity is on *tokens* (`RW s`), not the array itself. You
 need the right token to read/write, and `split`/`combine` tracks disjoint
 ownership at the type level.
 
-### 14.1 Design
+#### Design
 
 ```haskell
 -- Linear token: proves exclusive access to region s
@@ -892,7 +672,7 @@ The `split` operation is zero-copy — both halves share the same underlying
 `MutableByteArray#`, just with different offset/length views. No allocation,
 no copying, just arithmetic on the offset field.
 
-### 14.2 Type-Safe Row-Partitioned DGEMM
+#### Type-Safe Row-Partitioned DGEMM
 
 ```haskell
 case split rwC (half * n) arrC of
@@ -911,7 +691,7 @@ into disjoint row blocks. The type system statically guarantees:
 2. The original array cannot be accessed while split
 3. All slices must be recombined before reading results
 
-### 14.3 C FFI Integration
+#### C FFI Integration
 
 The `unsafeWithPtr` function passes pinned ByteArray data directly to C:
 
@@ -923,7 +703,7 @@ This threads through IO properly (unlike `runRW#`-based approaches that
 create independent state threads), ensuring C side effects are visible to
 subsequent Haskell reads.
 
-### 14.4 Implementation Notes
+#### Implementation Notes
 
 - **`unsafeDupablePerformIO` over `runRW#`**: Element access uses
   `unsafeDupablePerformIO` with `{-# NOINLINE #-}` to ensure writes from one
@@ -935,12 +715,12 @@ subsequent Haskell reads.
 
 ---
 
-## 15. Benchmarks
+## 8. Benchmarks
 
 All benchmarks on an Intel i7-10750H (6C/12T), NixOS, GCC 15.2, GHC 9.10.3,
 powersave governor. Best-of-N timing to reduce CPU frequency variance.
 
-### 11.1 Microbenchmarks (Phase 3)
+### 8.1 Microbenchmarks
 
 #### Fork/Join Overhead (us/iter)
 
@@ -978,7 +758,7 @@ powersave governor. Best-of-N timing to reduce CPU frequency variance.
 | 4 | 0.915 | 0.381 | 2.4x faster |
 | 8 | 2.135 | 1.201 | 1.8x faster |
 
-### 11.2 DGEMM Head-to-Head (Phase 8)
+### 8.2 DGEMM
 
 Same naive triple-loop DGEMM compiled identically, linked against either
 native libgomp or our runtime. Checksums match exactly.
@@ -1012,7 +792,9 @@ xychart-beta
 | 2 | 1330.19 | 1.61 | 1.8x |
 | 4 | 663.37 | 3.24 | 3.7x |
 
-### 11.3 Haskell FFI Scaling (Phase 4, parallel sinsum)
+### 8.3 FFI Scaling
+
+Haskell calling parallel sinsum via safe FFI:
 
 | Threads | Time (ms) | Speedup |
 |---|---|---|
@@ -1024,7 +806,7 @@ xychart-beta
 Near-linear scaling through the FFI boundary, confirming the runtime
 correctly parallelizes work dispatched from Haskell.
 
-### 12.4 Parallelism Crossover (Phase 13)
+### 8.4 Parallelism Crossover
 
 When does OpenMP from Haskell beat sequential C? We measured sinsum
 (compute-bound, ~11ns per element) at various sizes with 4 threads.
@@ -1051,7 +833,7 @@ xychart-beta
   line "Parallel OpenMP (safe FFI)" [2.1, 2.2, 2.9, 3.9, 16.6, 279]
 </pre>
 
-### 12.5 GHC Native Parallelism vs OpenMP (Phase 14)
+### 8.5 GHC Native Parallelism vs OpenMP
 
 For the same compute-bound sinsum workload, how does Haskell's `forkIO` with
 manual work splitting compare to OpenMP via safe FFI?
@@ -1068,11 +850,112 @@ entirely from per-element cost (C is 2.1x faster than Haskell for `sin()`
 due to SIMD vectorization and no boxing), not from parallelism overhead —
 both achieve near-ideal scaling on 4 threads.
 
+### 8.6 Task Execution
+
+Deferred task execution with work-stealing barriers (4 threads, best of 5):
+
+| Tasks | Sequential | Parallel | Speedup |
+|------:|-----------:|---------:|--------:|
+| 100   | 1.7 ms     | 0.3 ms   | 5.41x   |
+| 500   | 5.7 ms     | 1.5 ms   | 3.86x   |
+| 1,000 | 11.3 ms    | 2.9 ms   | 3.88x   |
+| 5,000 | 57.5 ms    | 14.3 ms  | 4.03x   |
+| 10,000| 112.2 ms   | 32.7 ms  | 3.43x   |
+
+Near-linear scaling (3.4-4.0x on 4 threads). Correctness verified against
+sequential reference with exact match.
+
+### 8.7 Calling Convention Overhead
+
+| Convention | ns/call | Relative | Mechanism |
+|---|---|---|---|
+| `foreign import prim` (Cmm) | ~0 | — | Direct register read, GHC optimizes away |
+| `foreign import ccall unsafe` | 2.3 | — | Save/restore STG registers |
+| `foreign import ccall safe` | 67.5 | 29x vs unsafe | + suspendThread/resumeThread |
+
+<pre class="mermaid">
+xychart-beta
+  title "FFI Calling Convention Overhead (ns/call)"
+  x-axis ["prim (Cmm)", "ccall unsafe", "ccall safe"]
+  y-axis "Latency (ns)" 0 --> 70
+  bar [0.1, 2.3, 67.5]
+</pre>
+
+### 8.8 Batched Calls
+
+Amortizing the ~68ns safe FFI overhead by batching N C calls within a single
+`suspendThread`/`resumeThread` cycle:
+
+| Batch size | Standard safe | Cmm batched | Speedup |
+|---|---|---|---|
+| 1 | 72.4 ns | 69.1 ns | 1.0x |
+| 2 | 71.3 ns | 36.1 ns | 2.0x |
+| 5 | 73.0 ns | 15.2 ns | 4.8x |
+| 10 | 71.0 ns | 8.7 ns | 8.2x |
+| 20 | 71.1 ns | 5.3 ns | 13.5x |
+| 50 | 71.7 ns | 3.4 ns | 21.1x |
+| 100 | 71.4 ns | 2.7 ns | 26.8x |
+
+At batch=100, per-call overhead drops to 2.7 ns — within 35% of unsafe FFI
+cost (~2 ns). The results match the theoretical prediction `(68 + N × 2) / N`
+closely at every batch size.
+
+<pre class="mermaid">
+xychart-beta
+  title "Batched Safe Calls: Per-Call Overhead (ns)"
+  x-axis "Batch size" ["1", "2", "5", "10", "20", "50", "100"]
+  y-axis "ns/call" 0 --> 75
+  line "Cmm batched" [69.1, 36.1, 15.2, 8.7, 5.3, 3.4, 2.7]
+  line "Standard safe" [72.4, 71.3, 73.0, 71.0, 71.1, 71.7, 71.4]
+</pre>
+
+### 8.9 Zero-Copy Improvement
+
+Haskell sequential DGEMM inner loop, pinned ByteArray with unboxed primops
+vs standard boxed FFI:
+
+| N | Boxed (ms) | Unboxed (ms) | Speedup |
+|--:|-----------:|-------------:|--------:|
+| 256 | 57.3 | 53.4 | 1.07x |
+| 512 | 457.9 | 384.6 | **1.19x** |
+
+The 19% improvement at N=512 comes from eliminating `CDouble` boxing in the
+O(n³) inner loop. `-ddump-simpl` confirms the hot loop uses `+##`, `*##`, and
+`readDoubleArray#` with no `D#` constructor.
+
 ---
 
-## 16. Notable Bugs and Fixes
+## 9. Implementation Timeline
 
-### 12.1 Barrier Sense Mismatch Deadlock
+The runtime was developed in 18 phases. Each phase is summarized below with
+a reference to the section containing full details.
+
+| Phase | Description | Section |
+|------:|-------------|---------|
+| 1 | Stub pthread-based runtime validating GCC GOMP ABI compatibility | [§4](#4-architecture) |
+| 2 | Replace pthreads with GHC Capabilities; hybrid C shim approach | [§4](#4-architecture) |
+| 3 | Lock-free optimization: atomic generation counter, sense-reversing barriers | [§5](#5-optimization-from-24x-slower-to-parity) |
+| 4 | Haskell FFI interop via `foreign import ccall safe` | [§6.1](#61-ffi-calling-convention) |
+| 5 | Concurrent Haskell green threads + OpenMP parallel regions | [§6.3](#63-concurrent-execution) |
+| 6 | GC interaction testing — minimal impact on OpenMP latency | [§6.4](#64-garbage-collection-isolation) |
+| 7 | Dense matrix multiply (DGEMM) workload | [§8.2](#82-dgemm) |
+| 8 | Head-to-head comparison with native libgomp — performance parity | [§8.2](#82-dgemm) |
+| 9 | Bidirectional interop: OpenMP workers call Haskell via FunPtr | [§6.5](#65-bidirectional-callbacks) |
+| 10 | Cmm primitives via `foreign import prim` — zero-overhead FFI | [§7.1](#71-cmm-primitives) |
+| 11 | `inline-cmm` quasiquoter integration | [§7.1](#71-cmm-primitives) |
+| 12 | Batched safe calls amortizing 68ns FFI overhead | [§7.2](#72-batched-safe-calls) |
+| 13 | Parallelism crossover analysis — break-even at ~500 elements | [§8.4](#84-parallelism-crossover) |
+| 14 | GHC native parallelism vs OpenMP — OpenMP ~2x faster | [§8.5](#85-ghc-native-parallelism-vs-openmp) |
+| 15 | Deferred task execution with work-stealing barriers | [§4.3](#43-task-queues-and-work-stealing) |
+| 16 | Zero-copy FFI with pinned ByteArray — 19% inner loop speedup | [§7.3](#73-zero-copy-ffi-with-pinned-bytearray) |
+| 17 | Linear typed arrays for type-safe disjoint partitioning | [§7.4](#74-linear-typed-arrays) |
+| 18 | Runtime improvements: guided scheduling, hybrid barriers, task pools | [§4](#4-architecture) |
+
+---
+
+## 10. Notable Bugs and Fixes
+
+### 10.1 Barrier Sense Mismatch Deadlock
 
 **Symptom**: Program hangs when calling `GOMP_parallel`
 from a `forkIO` thread at `-N4`. No output at all. Works
@@ -1089,7 +972,7 @@ barrier's global sense to 0. On the next region:
 **Fix**: Reset all local sense variables to 0 at the start of
 each parallel region, matching the freshly initialized barriers.
 
-### 12.2 False Parallel-For Regression
+### 10.2 False Parallel-For Regression
 
 **Symptom**: At 4 threads, parallel for appeared 1.65x slower
 than native libgomp (6.7ms vs 4.1ms).
@@ -1103,7 +986,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 17. Limitations
+## 11. Limitations
 
 | Limitation | Impact | Notes |
 |---|---|---|
@@ -1114,7 +997,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 18. Related Work
+## 12. Related Work
 
 **BOLT** ([bolt-omp.org](https://www.bolt-omp.org/), Best Paper PACT '19) is
 the closest analogue to this project. BOLT is a full OpenMP runtime built on
@@ -1142,7 +1025,7 @@ Argobots' generality for seamless Haskell interoperation.
 
 ---
 
-## 19. Conclusions
+## 13. Conclusions
 
 GHC's Runtime System can serve as a fully functional OpenMP runtime with
 **zero measurable overhead** compared to native libgomp. The
