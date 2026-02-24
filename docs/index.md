@@ -122,7 +122,7 @@ A minimum viable runtime needs only 9 symbols (`GOMP_parallel`,
 `GOMP_single_start`, `GOMP_task`,
 `GOMP_taskwait`, `omp_get_num_threads`,
 `omp_get_thread_num`). Full OpenMP 4.5 coverage requires ~85
-symbols. Our implementation provides ~75.
+symbols. Our implementation provides ~97.
 
 ### 3.3 Cmm and `foreign import prim`
 
@@ -219,7 +219,8 @@ counter; the last thread flips the global sense, releasing all waiters. This is
 fully lock-free on the fast path.
 
 Workers use a **spin-then-sleep** strategy: spin for ~4000
-iterations on the generation counter (using `_mm_pause`), then fall
+iterations (configurable via `OMP_WAIT_POLICY`: passive=100,
+active=10000) on the generation counter (using `_mm_pause`), then fall
 back to a `pthread_cond_wait` for power efficiency during idle
 periods.
 
@@ -371,6 +372,27 @@ partitioning arrays into disjoint regions.
 Demonstrates type-safe row-partitioned DGEMM where each half of the output
 matrix is computed independently — the type system statically prevents
 aliased writes. Details in [Section 14](#14-linear-typed-arrays).
+
+**Phase 18 — Runtime Improvements**
+
+Five targeted improvements to close remaining overhead gaps:
+
+1. **True guided scheduling**: CAS-based loop with exponentially-decreasing
+   chunk sizes (`remaining / nthreads`), replacing the previous delegation to
+   dynamic scheduling.
+2. **Hybrid spin-sleep barriers**: Configurable spin count via `OMP_WAIT_POLICY`
+   (passive=100, active=10000, default=4000), with `sched_yield()` fallback
+   after the spin threshold.
+3. **Pre-allocated task descriptor pool**: A static pool of 4096 `task_entry_t`
+   descriptors with per-Capability lock-free free lists, eliminating
+   `malloc`/`free` per task.
+4. **Per-Capability task queues**: Each thread pushes to its own
+   `atomic_flag`-spinlocked queue. Idle threads steal from others via linear
+   scan. Replaces the Phase 15 global `pthread_mutex` queue.
+5. **Serialized nested parallelism**: Inner parallel regions execute with 1
+   thread. Full `omp_get_level()`, `omp_get_active_level()`,
+   `omp_get_ancestor_thread_num()`, and `omp_get_team_size()` support with
+   per-thread nesting state up to 8 levels deep.
 
 ---
 
@@ -760,14 +782,19 @@ executed by idle threads waiting at barriers.
 
 ### 12.1 Implementation
 
-The task queue is a mutex-protected linked list with an atomic pending counter:
+Each Capability has its own task queue protected by an `atomic_flag` spinlock,
+with an atomic pending counter for fast-path bypass:
 
 - **GOMP_task**: When `if_clause` is true and we're in a parallel region,
-  copies data to heap (via `cpyfn` or `memcpy`) and pushes to the queue.
-  Otherwise executes inline.
-- **Barrier task stealing**: `spin_barrier_wait_tasks` steals and executes
-  tasks while spinning. The last thread arriving drains remaining tasks
-  before releasing the barrier.
+  copies data to heap (via `cpyfn` or `memcpy`) and pushes to the local
+  queue. Otherwise executes inline. Task descriptors are allocated from a
+  pre-allocated pool (4096 entries) with per-Capability lock-free free lists.
+- **Work stealing**: Idle threads first pop from their own queue, then steal
+  from other threads' queues via linear scan from a pseudo-random start.
+- **Barrier task stealing**: `spin_barrier_wait_tasks` checks
+  `g_tasks_pending` before attempting steals (avoiding expensive atomic
+  operations when no tasks exist). The last thread arriving drains remaining
+  tasks before releasing the barrier.
 - **End-of-parallel stealing**: The pool's end-barrier uses the task-stealing
   variant, since GCC may omit explicit `GOMP_barrier` calls after
   `#pragma omp single`.
@@ -1080,12 +1107,10 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 | Limitation | Impact | Notes |
 |---|---|---|
-| No nested parallelism | Low | Inner parallel regions run with 1 thread. `setNumCapabilities` only increases. |
-| Tasks execute inline | Medium | `GOMP_task` runs the task immediately (no deferred execution, no work stealing). Sufficient for `#pragma omp task` correctness but not for performance. |
+| Serialized nesting only | Low | Inner parallel regions execute with 1 thread. True nested parallelism (multiple active levels) is not supported. |
 | Single global team | Low | No support for different thread counts in nested teams. |
 | No target offloading | None | Not applicable to this project's scope. |
 | No doacross loops | Low | `GOMP_doacross_*` not implemented. |
-| Guided schedule = dynamic | Low | Our guided schedule uses the same algorithm as dynamic (constant chunk size). |
 
 ---
 
@@ -1121,7 +1146,7 @@ Argobots' generality for seamless Haskell interoperation.
 
 GHC's Runtime System can serve as a fully functional OpenMP runtime with
 **zero measurable overhead** compared to native libgomp. The
-implementation is a single 800-line C file using only public GHC RTS APIs —
+implementation is a single ~1300-line C file using only public GHC RTS APIs —
 no GHC fork required.
 
 The key architectural insights are:
@@ -1157,7 +1182,7 @@ garbage collector.
 `GOMP_critical_start`, `GOMP_critical_end`, `GOMP_critical_name_start`, `GOMP_critical_name_end`, `GOMP_atomic_start`, `GOMP_atomic_end`, `GOMP_single_start`, `GOMP_single_copy_start`, `GOMP_single_copy_end`, `GOMP_ordered_start`, `GOMP_ordered_end`
 
 **Worksharing Loops:**
-`GOMP_loop_static_start`, `GOMP_loop_static_next`, `GOMP_loop_dynamic_start`, `GOMP_loop_dynamic_next`, `GOMP_loop_guided_start`, `GOMP_loop_guided_next`, `GOMP_loop_runtime_start`, `GOMP_loop_runtime_next`, `GOMP_loop_start`, `GOMP_loop_end`, `GOMP_loop_end_nowait`, `GOMP_parallel_loop_static`, `GOMP_parallel_loop_dynamic`, `GOMP_parallel_loop_guided`, `GOMP_parallel_loop_runtime`
+`GOMP_loop_static_start`, `GOMP_loop_static_next`, `GOMP_loop_dynamic_start`, `GOMP_loop_dynamic_next`, `GOMP_loop_guided_start`, `GOMP_loop_guided_next`, `GOMP_loop_runtime_start`, `GOMP_loop_runtime_next`, `GOMP_loop_start`, `GOMP_loop_end`, `GOMP_loop_end_nowait`, `GOMP_loop_nonmonotonic_dynamic_start`, `GOMP_loop_nonmonotonic_dynamic_next`, `GOMP_loop_nonmonotonic_guided_start`, `GOMP_loop_nonmonotonic_guided_next`, `GOMP_parallel_loop_static`, `GOMP_parallel_loop_dynamic`, `GOMP_parallel_loop_guided`, `GOMP_parallel_loop_runtime`, `GOMP_parallel_loop_nonmonotonic_dynamic`, `GOMP_parallel_loop_nonmonotonic_guided`
 
 **Tasks:**
 `GOMP_task`, `GOMP_taskwait`, `GOMP_taskyield`, `GOMP_taskgroup_start`, `GOMP_taskgroup_end`

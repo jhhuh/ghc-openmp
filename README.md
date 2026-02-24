@@ -57,7 +57,16 @@ invisible to GHC's garbage collector.
 ### Build & Run
 
 ```bash
-# Enter development environment
+# Build all binaries (reproducible, no nix develop needed)
+nix build
+
+# Run test/bench suites via nix
+nix run .#test-all
+nix run .#bench
+nix run .#test-tasks
+nix run .#bench-dgemm
+
+# Or: enter development environment for interactive use
 nix develop
 
 # Build everything
@@ -90,8 +99,9 @@ make bench-dgemm      # DGEMM: native vs RTS at 1/2/4/8 threads
 ### Manual Build (without Make)
 
 ```bash
-# Compile the runtime
-gcc -DTHREADED_RTS -I$(ghc --print-libdir)/x86_64-linux-ghc-9.10.3/rts-1.0.2/include \
+# Compile the runtime (find RTS include dir dynamically)
+RTS_INCDIR=$(find $(ghc --print-libdir) -name 'Rts.h' -path '*/include/*' -print -quit | xargs dirname)
+gcc -DTHREADED_RTS -I$RTS_INCDIR \
     -Wall -O2 -c src/ghc_omp_runtime_rts.c -o build/ghc_omp_runtime_rts.o
 
 # Compile OpenMP C library
@@ -109,7 +119,7 @@ build/hs_omp_demo +RTS -N4
 
 ```
 src/
-  ghc_omp_runtime_rts.c   # The OpenMP runtime (RTS-backed, ~800 lines)
+  ghc_omp_runtime_rts.c   # The OpenMP runtime (RTS-backed, ~1300 lines)
   ghc_omp_runtime.c        # Phase 1 stub runtime (pthread-based, reference)
   omp_compute.c             # OpenMP compute kernels (dot, saxpy, sinsum, dgemm)
   HsMain.hs                 # Phase 4: Haskell FFI interop demo
@@ -133,6 +143,9 @@ src/
   bench_dgemm.c              # DGEMM benchmark (native vs RTS)
   test_omp_basic.c           # Basic OpenMP construct tests
   test_rts_embed.c           # GHC RTS embedding test
+  test_guided.c              # Phase 18: guided scheduling correctness test
+  test_nested.c              # Phase 18: nested parallelism level tracking test
+  HsStub.hs                  # Minimal Haskell module for RTS initialization
 
 artifacts/                  # Research notes, plans, and benchmark results
 ```
@@ -151,7 +164,7 @@ artifacts/                  # Research notes, plans, and benchmark results
 | `#pragma omp sections` | Full |
 | `#pragma omp ordered` | Mutex-based |
 | `omp_*` user API (threads, locks, timing) | Full |
-| Nested parallelism | Not supported |
+| Nested parallelism | Serialized (inner regions run single-threaded) |
 | Target offloading | Not applicable |
 
 ## Benchmark Results (4 threads, i7-10750H)
