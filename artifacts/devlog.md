@@ -175,3 +175,8 @@ Inspired by BOLT/Argobots:
 3. Pre-allocated task descriptor pool (no per-task malloc/free).
 4. Per-Capability task queues with work stealing.
 5. Serialized nested parallelism with level tracking.
+
+## 2026-02-24: Nix build support
+
+Added `packages.default` and `apps` (test-all, bench, bench-dgemm, test-tasks)
+to `flake.nix`. Binary builds via `nix build`, runners via `nix run .#test-all`.

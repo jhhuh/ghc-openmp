@@ -2,11 +2,9 @@ CC ?= gcc
 GHC ?= ghc
 CFLAGS = -Wall -Wextra -O2 -g
 
-# GHC RTS paths (set by nix develop or manually)
+# GHC RTS paths (auto-discovered from ghc --print-libdir)
 GHC_LIBDIR := $(shell $(GHC) --print-libdir 2>/dev/null)
-GHC_PLAT := x86_64-linux-ghc-9.10.3
-RTS_INCDIR := $(GHC_LIBDIR)/$(GHC_PLAT)/rts-1.0.2/include
-RTS_LIBDIR := $(GHC_LIBDIR)/$(GHC_PLAT)
+RTS_INCDIR := $(shell find $(GHC_LIBDIR) -name 'Rts.h' -path '*/include/*' -print -quit 2>/dev/null | xargs dirname)
 
 .PHONY: all clean test test-native test-ghcomp test-rts-embed test-both
 
@@ -366,6 +364,35 @@ check-symbols: build/libghcomp.so
 check-deps: build/test_omp_basic_native
 	@echo "=== Required GOMP/omp symbols ==="
 	@objdump -T build/test_omp_basic_native | grep -i "UND.*\(GOMP\|omp_\)" | awk '{print $$NF}' | sort
+
+# ---- Build all binaries ----
+
+BUILD_ALL_BINS = \
+	build/libghcomp.so \
+	build/test_omp_basic_ghcomp build/test_omp_basic_native \
+	build/test_rts_embed build/test_omp_rts \
+	build/test_guided_native build/test_guided_rts \
+	build/test_nested_native build/test_nested_rts \
+	build/test_tasks_native build/test_tasks_rts \
+	build/hs_omp_demo build/hs_concurrent build/gc_stress \
+	build/matmul_demo build/callback_demo \
+	build/cmm_demo build/cmm_batch \
+	build/crossover build/par_compare build/task_demo \
+	build/zerocopy_demo build/linear_demo \
+	build/bench_native build/bench_rts \
+	build/bench_dgemm_native build/bench_dgemm_rts
+
+build-all: $(BUILD_ALL_BINS)
+
+PREFIX ?= /usr/local
+
+install: build-all
+	install -d $(DESTDIR)$(PREFIX)/bin
+	install -d $(DESTDIR)$(PREFIX)/lib
+	install -m 755 build/libghcomp.so $(DESTDIR)$(PREFIX)/lib/
+	for f in $(filter-out build/libghcomp.so build/%.o,$(BUILD_ALL_BINS)); do \
+		install -m 755 $$f $(DESTDIR)$(PREFIX)/bin/$$(basename $$f); \
+	done
 
 clean:
 	rm -rf build/
