@@ -26,7 +26,7 @@ auto-detects whether it is being hosted by a C program or a Haskell program.
 
 ### 3.2 The libgomp ABI
 
-*Source: [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/ghc_omp_runtime_rts.c)*
+*Source: [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/ghc_omp_runtime_rts.c)*
 
 GCC transforms OpenMP pragmas into calls to `GOMP_*` functions.
 For example:
@@ -49,7 +49,7 @@ symbols. Our implementation provides ~97.
 
 ### 3.3 Cmm and `foreign import prim`
 
-*Source: [`omp_prims.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_prims.cmm)*
+*Source: [`omp_prims.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_prims.cmm)*
 
 [Cmm](https://gitlab.haskell.org/ghc/ghc/-/wikis/commentary/compiler/cmm-type)
 (C minus minus) is GHC's low-level intermediate representation — a portable

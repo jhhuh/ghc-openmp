@@ -18,7 +18,7 @@
 -- = How it works
 --
 -- The runtime implements the GCC @GOMP_*@ ABI and the @omp_*@ user API in a
--- single C file (@src\/ghc_omp_runtime_rts.c@, ~1300 lines).  On the first
+-- single C file (@cbits\/ghc_omp_runtime_rts.c@, ~1300 lines).  On the first
 -- @GOMP_parallel@ call, it initializes the GHC RTS (or increments its ref
 -- count if already running from Haskell) and creates N-1 OS worker threads
 -- pinned to GHC Capabilities via @rts_setInCallCapability()@.

@@ -1,6 +1,6 @@
 ## 4. Architecture
 
-*Source: [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/ghc_omp_runtime_rts.c)*
+*Source: [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/ghc_omp_runtime_rts.c)*
 
 <figure>
 <img src="charts/architecture.svg" alt="Runtime architecture diagram" />
@@ -53,7 +53,7 @@ per-thread nesting state up to 8 levels deep.
 
 ### 4.3 Task Queues and Work Stealing
 
-*Source: [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/ghc_omp_runtime_rts.c), [`test_omp_tasks.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/test_omp_tasks.c)*
+*Source: [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/ghc_omp_runtime_rts.c), [`test_omp_tasks.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/test_omp_tasks.c)*
 
 OpenMP tasks (`#pragma omp task`) enable fork-join parallelism where one
 thread creates work items and other threads steal them. Our runtime supports

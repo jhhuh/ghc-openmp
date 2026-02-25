@@ -5,7 +5,7 @@ powersave governor. Best-of-N timing to reduce CPU frequency variance.
 
 ### 8.1 Microbenchmarks
 
-*Source: [`bench_overhead.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/bench_overhead.c)*
+*Source: [`bench_overhead.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/bench_overhead.c)*
 
 #### Fork/Join Overhead (us/iter)
 
@@ -45,7 +45,7 @@ powersave governor. Best-of-N timing to reduce CPU frequency variance.
 
 ### 8.2 DGEMM
 
-*Source: [`bench_dgemm.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/bench_dgemm.c), [`omp_compute.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_compute.c)*
+*Source: [`bench_dgemm.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/bench_dgemm.c), [`omp_compute.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_compute.c)*
 
 Same naive triple-loop DGEMM compiled identically, linked against either
 native libgomp or our runtime. Checksums match exactly.
@@ -76,7 +76,7 @@ CPU frequency noise, not runtime overhead.
 
 ### 8.3 FFI Scaling
 
-*Source: [`HsMain.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsMain.hs)*
+*Source: [`HsMain.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsMain.hs)*
 
 Haskell calling parallel sinsum via safe FFI:
 
@@ -92,7 +92,7 @@ correctly parallelizes work dispatched from Haskell.
 
 ### 8.4 Parallelism Crossover
 
-*Source: [`HsCrossover.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsCrossover.hs)*
+*Source: [`HsCrossover.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsCrossover.hs)*
 
 When does OpenMP from Haskell beat sequential C? We measured sinsum
 (compute-bound, ~11ns per element) at various sizes with 4 threads.
@@ -116,7 +116,7 @@ overhead is ~1.8us (86ns safe FFI + 1712ns OpenMP fork/join).
 
 ### 8.5 GHC Native Parallelism vs OpenMP
 
-*Source: [`HsParCompare.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsParCompare.hs)*
+*Source: [`HsParCompare.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsParCompare.hs)*
 
 For the same compute-bound sinsum workload, how does Haskell's `forkIO` with
 manual work splitting compare to OpenMP via safe FFI?
@@ -153,7 +153,7 @@ for the full assembly analysis.
 
 ### 8.6 Task Execution
 
-*Source: [`HsTaskDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsTaskDemo.hs), [`test_omp_tasks.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/test_omp_tasks.c)*
+*Source: [`HsTaskDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsTaskDemo.hs), [`test_omp_tasks.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/test_omp_tasks.c)*
 
 Deferred task execution with work-stealing barriers (4 threads, best of 5):
 
@@ -170,7 +170,7 @@ sequential reference with exact match.
 
 ### 8.7 Calling Convention Overhead
 
-*Source: [`HsCmmDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsCmmDemo.hs), [`omp_prims.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_prims.cmm)*
+*Source: [`HsCmmDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsCmmDemo.hs), [`omp_prims.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_prims.cmm)*
 
 | Convention | ns/call | Relative | Mechanism |
 |---|---|---|---|
@@ -184,7 +184,7 @@ sequential reference with exact match.
 
 ### 8.8 Batched Calls
 
-*Source: [`HsCmmBatch.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsCmmBatch.hs), [`omp_batch.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_batch.cmm)*
+*Source: [`HsCmmBatch.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsCmmBatch.hs), [`omp_batch.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_batch.cmm)*
 
 Amortizing the ~68ns safe FFI overhead by batching N C calls within a single
 `suspendThread`/`resumeThread` cycle:
@@ -209,7 +209,7 @@ closely at every batch size.
 
 ### 8.9 Zero-Copy Improvement
 
-*Source: [`HsZeroCopy.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsZeroCopy.hs)*
+*Source: [`HsZeroCopy.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsZeroCopy.hs)*
 
 Haskell sequential DGEMM inner loop, pinned ByteArray with unboxed primops
 vs standard boxed FFI:

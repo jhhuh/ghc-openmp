@@ -66,14 +66,14 @@
             resolve_fn_anchors() {
               local file="$1"
               for fn in $(grep -oE '#FN:[A-Za-z_0-9]+' "$file" | sed 's/#FN://' | sort -u); do
-                start=$(grep -n "''${fn}(" src/ghc_omp_runtime_rts.c | head -1 | cut -d: -f1)
+                start=$(grep -n "''${fn}(" cbits/ghc_omp_runtime_rts.c | head -1 | cut -d: -f1)
                 if [ -z "$start" ]; then
                   echo "WARNING: no definition for ''${fn}" >&2; continue
                 fi
-                if sed -n "''${start}p" src/ghc_omp_runtime_rts.c | grep -q '{.*}'; then
+                if sed -n "''${start}p" cbits/ghc_omp_runtime_rts.c | grep -q '{.*}'; then
                   anchor="#L''${start}"
                 else
-                  end=$(awk -v s="$start" 'NR>s && /^\}/ {print NR; exit}' src/ghc_omp_runtime_rts.c)
+                  end=$(awk -v s="$start" 'NR>s && /^\}/ {print NR; exit}' cbits/ghc_omp_runtime_rts.c)
                   anchor="#L''${start}-L''${end}"
                 fi
                 substituteInPlace "$file" --replace-quiet "#FN:''${fn}" "$anchor"

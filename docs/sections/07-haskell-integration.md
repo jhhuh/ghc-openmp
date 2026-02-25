@@ -8,7 +8,7 @@ See also the [Haddock API reference](haddock/) for the `GHC.OpenMP` module.
 
 ### 6.1 FFI Calling Convention
 
-*Source: [`HsMain.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsMain.hs)*
+*Source: [`HsMain.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsMain.hs)*
 
 Haskell calls OpenMP C code via `foreign import ccall safe`:
 
@@ -37,7 +37,7 @@ and returns. The runtime discovers the existing Capabilities via
 
 ### 6.3 Concurrent Execution
 
-*Source: [`HsConcurrent.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsConcurrent.hs)*
+*Source: [`HsConcurrent.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsConcurrent.hs)*
 
 ```haskell
 -- Haskell green thread: pure computation
@@ -58,7 +58,7 @@ execution confirmed.
 
 ### 6.4 Garbage Collection Isolation
 
-*Source: [`HsGCStress.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsGCStress.hs)*
+*Source: [`HsGCStress.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsGCStress.hs)*
 
 A key concern: GHC's stop-the-world GC pauses all threads holding
 Capabilities. Would this stall OpenMP workers?
@@ -89,7 +89,7 @@ GHC RTS statistics: 99.7% productivity, GC time <0.5% of elapsed.
 
 ### 6.5 Bidirectional Callbacks
 
-*Source: [`HsCallback.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsCallback.hs), [`omp_compute.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_compute.c)*
+*Source: [`HsCallback.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsCallback.hs), [`omp_compute.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_compute.c)*
 
 The previous sections demonstrated Haskell calling OpenMP. **OpenMP workers
 can also call back into Haskell** from within a parallel region.

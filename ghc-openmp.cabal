@@ -24,7 +24,7 @@ library
   other-modules:    Paths_ghc_openmp
   autogen-modules:  Paths_ghc_openmp
   hs-source-dirs:   lib
-  c-sources:        src/ghc_omp_runtime_rts.c
+  c-sources:        cbits/ghc_omp_runtime_rts.c
   cc-options:       -DTHREADED_RTS -O2
   ghc-options:      -threaded
   build-depends:    base >= 4.14 && < 5

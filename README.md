@@ -47,70 +47,129 @@ invisible to GHC's garbage collector.
 
 Full write-up with charts and benchmarks: **https://jhhuh.github.io/ghc-openmp/**
 
-Built with Hakyll and the Haskell Chart library (static SVGs at build time, no client-side JS).
+Built with MkDocs Material and the Haskell Chart library (static SVGs at build time, no client-side JS).
 
 ```bash
 nix build .#docs       # Build static site to ./result/
 nix run .#docs         # Serve locally at http://localhost:8080
 ```
 
-## Quick Start
+## Building
 
-### Prerequisites
-
-- [Nix](https://nixos.org/) with flakes enabled (provides GHC, GCC, all dependencies)
-
-### Build & Run
+### With Nix (recommended)
 
 ```bash
-# Build all binaries
+nix build              # Build all binaries (libghcomp.so, tests, benchmarks, demos)
+nix run .#test-all     # Run all tests
+nix run .#bench        # Run microbenchmarks
+nix run .#bench-dgemm  # Run DGEMM benchmark
+nix develop            # Enter dev shell with GHC, GCC, and tools
+```
+
+### Without Nix
+
+Prerequisites: GHC (with threaded RTS), GCC (with OpenMP support), make.
+
+```bash
+make all               # Build libghcomp.so and basic tests
+make build-all         # Build everything (tests, benchmarks, demos)
+make test-all          # Run all tests
+make bench             # Run microbenchmarks
+```
+
+The Makefile auto-discovers GHC RTS include/library paths via `ghc --print-libdir`.
+
+### As a Haskell library (cabal)
+
+Add to your `.cabal` file:
+
+```cabal
+build-depends: ghc-openmp
+ghc-options:   -threaded
+```
+
+The C runtime source is compiled directly into your package using your own
+GHC — no shared library linkage, no ABI conflicts.
+
+```haskell
+import GHC.OpenMP
+
+-- Call your OpenMP C code via safe FFI
+foreign import ccall safe "my_parallel_function"
+    c_myFunction :: CInt -> IO CDouble
+```
+
+## Drop-in libgomp Replacement (C projects)
+
+`libghcomp.so` is a drop-in replacement for `libgomp.so`. Any C program
+compiled with `gcc -fopenmp` can use it without source changes.
+
+### Build the shared library
+
+```bash
+# With Nix:
 nix build
+ls result/lib/libghcomp.so
 
-# Run tests and benchmarks
-nix run .#test-all
-nix run .#bench
-nix run .#test-tasks
-nix run .#bench-dgemm
+# Without Nix:
+make build/libghcomp.so
+```
 
-# Interactive development
-nix develop
-make all
-make test-all
+### Link against it
+
+```bash
+# Compile your OpenMP program, linking against libghcomp instead of libgomp
+gcc -fopenmp my_program.c -Lresult/lib -lghcomp -Wl,-rpath,result/lib -o my_program
+./my_program
+```
+
+### LD_PRELOAD (no recompilation)
+
+```bash
+# Use with an existing binary — replaces libgomp at load time
+LD_PRELOAD=result/lib/libghcomp.so ./my_existing_omp_program
+```
+
+### pkg-config
+
+A `ghcomp.pc.in` template is shipped in `data/`. After installation:
+
+```bash
+gcc -fopenmp my_code.c $(pkg-config --cflags --libs ghcomp) -o my_code
 ```
 
 ## Project Structure
 
 ```
-src/
-  ghc_omp_runtime_rts.c   # The OpenMP runtime (RTS-backed, ~1300 lines)
-  ghc_omp_runtime.c        # Phase 1 stub runtime (pthread-based, reference)
-  omp_compute.c             # OpenMP compute kernels (dot, saxpy, sinsum, dgemm)
-  HsMain.hs                 # Phase 4: Haskell FFI interop demo
-  HsConcurrent.hs           # Phase 5: concurrent Haskell + OpenMP
-  HsGCStress.hs             # Phase 6: GC interaction test
-  HsMatMul.hs               # Phase 7: dense matrix multiply
-  HsCallback.hs             # Phase 9: bidirectional interop (OpenMP -> Haskell)
-  omp_prims.cmm              # Phase 10: Cmm primitives (zero-overhead RTS access)
-  HsCmmDemo.hs               # Phase 10: calling convention benchmark
-  HsInlineCmm.hs             # Phase 11: inline-cmm quasiquoter demo
-  omp_batch.cmm               # Phase 12: batched safe calls (manual suspend/resume)
-  HsCmmBatch.hs               # Phase 12: batch overhead benchmark
-  HsCrossover.hs              # Phase 13: parallelism crossover analysis
-  HsParCompare.hs             # Phase 14: GHC forkIO vs OpenMP comparison
-  HsTaskDemo.hs               # Phase 15: deferred task execution benchmark
-  test_omp_tasks.c            # Phase 15: C-level task correctness/perf test
-  HsZeroCopy.hs               # Phase 16: zero-copy FFI with pinned ByteArray
-  Data/Array/Linear.hs        # Phase 17: linear typed arrays (inspired by konn/linear-extra)
-  HsLinearDemo.hs             # Phase 17: type-safe parallel sub-array demo
+cbits/
+  ghc_omp_runtime_rts.c    # The OpenMP runtime (~1300 lines)
+  ghc_omp_runtime.c         # Phase 1 reference stub (pthread-based)
+  omp_compute.c              # Shared compute kernels (sinsum, dgemm, etc.)
+  omp_prims.cmm              # Cmm primitives (zero-overhead RTS access)
+  omp_batch.cmm              # Batched safe calls (manual suspend/resume)
+  HsStub.hs                  # Minimal Haskell module for RTS initialization
   bench_overhead.c           # Microbenchmark suite
   bench_dgemm.c              # DGEMM benchmark (native vs RTS)
-  test_omp_basic.c           # Basic OpenMP construct tests
-  test_rts_embed.c           # GHC RTS embedding test
-  test_guided.c              # Phase 18: guided scheduling correctness test
-  test_nested.c              # Phase 18: nested parallelism level tracking test
-  HsStub.hs                  # Minimal Haskell module for RTS initialization
+  test_*.c                   # C test programs
 
-artifacts/                  # Research notes, plans, and benchmark results
+demos/
+  HsMain.hs                  # Haskell FFI interop demo
+  HsConcurrent.hs            # Concurrent Haskell + OpenMP
+  HsGCStress.hs              # GC interaction test
+  HsMatMul.hs                # Dense matrix multiply
+  HsCallback.hs              # Bidirectional interop (OpenMP -> Haskell)
+  HsCmmDemo.hs               # Calling convention benchmark
+  HsCmmBatch.hs              # Batch overhead benchmark
+  HsCrossover.hs             # Parallelism crossover analysis
+  HsParCompare.hs            # GHC forkIO vs OpenMP comparison
+  HsTaskDemo.hs              # Deferred task execution
+  HsZeroCopy.hs              # Zero-copy FFI with pinned ByteArray
+  HsLinearDemo.hs            # Linear typed arrays demo
+  Data/Array/Linear.hs       # Linear typed array library
+  inline-cmm/                # inline-cmm quasiquoter demo (separate cabal package)
+
+lib/
+  GHC/OpenMP.hs              # Haskell API (Haddock: jhhuh.github.io/ghc-openmp/haddock/)
 ```
 
 ## Implemented OpenMP Features
@@ -173,15 +232,15 @@ Performance is indistinguishable within measurement noise.
 
 ## Cmm Primitives and inline-cmm
 
-Phase 10 uses [Cmm](https://gitlab.haskell.org/ghc/ghc/-/wikis/commentary/compiler/cmm-type)
-(GHC's low-level intermediate representation) to write primitives callable from
-Haskell via `foreign import prim`. This is the fastest calling convention GHC
-offers — arguments pass directly in STG registers with no FFI boundary at all.
+[Cmm](https://gitlab.haskell.org/ghc/ghc/-/wikis/commentary/compiler/cmm-type)
+(GHC's low-level intermediate representation) primitives callable from
+Haskell via `foreign import prim` — the fastest calling convention GHC
+offers. Arguments pass directly in STG registers with no FFI boundary at all.
 
 For example, reading the current Capability number (equivalent to
 `omp_get_thread_num()`) compiles to a single memory load:
 
-```cmm
+```c
 #include "Cmm.h"
 
 omp_prim_cap_no(W_ dummy) {
@@ -209,9 +268,8 @@ Cmm to an object file via Template Haskell.
 
 ### Batched Safe Calls
 
-Phase 12 shows that the ~68ns safe FFI overhead can be amortized by batching
-multiple C calls within a single `suspendThread`/`resumeThread` cycle, written
-manually in Cmm:
+The ~68ns safe FFI overhead can be amortized by batching multiple C calls
+within a single `suspendThread`/`resumeThread` cycle, written manually in Cmm:
 
 | Batch size | Per-call cost | Speedup vs safe |
 |---|---|---|

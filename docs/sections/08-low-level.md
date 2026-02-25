@@ -6,7 +6,7 @@ zero-copy data passing, and linear types for safe mutable array partitioning.
 
 ### 7.1 Cmm Primitives
 
-*Source: [`omp_prims.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_prims.cmm), [`HsCmmDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsCmmDemo.hs)*
+*Source: [`omp_prims.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_prims.cmm), [`HsCmmDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsCmmDemo.hs)*
 
 GHC provides three calling conventions for foreign code, each with different
 overhead. We wrote a Cmm primitive that reads `Capability_no(MyCapability())`
@@ -55,7 +55,7 @@ path could potentially reduce this.
 
 ### 7.2 Batched Safe Calls
 
-*Source: [`omp_batch.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_batch.cmm), [`HsCmmBatch.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsCmmBatch.hs)*
+*Source: [`omp_batch.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_batch.cmm), [`HsCmmBatch.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsCmmBatch.hs)*
 
 The safe FFI tax of ~68ns per call comes from `suspendThread()`/`resumeThread()`,
 which release and reacquire the Capability. For workloads that make many short
@@ -122,7 +122,7 @@ Benchmark results showing speedups up to 27x are in
 
 ### 7.3 Zero-Copy FFI with Pinned ByteArray
 
-*Source: [`HsZeroCopy.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsZeroCopy.hs)*
+*Source: [`HsZeroCopy.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsZeroCopy.hs)*
 
 The standard FFI pattern (`allocaArray` + `peekElemOff`/`pokeElemOff`) boxes
 every element as `CDouble` and converts via `realToFrac`, adding overhead at
@@ -154,7 +154,7 @@ Performance measurements are in [Section 8.9](#89-zero-copy-improvement).
 
 ### 7.4 Linear Typed Arrays
 
-*Source: [`Data/Array/Linear.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/Data/Array/Linear.hs), [`HsLinearDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsLinearDemo.hs)*
+*Source: [`Data/Array/Linear.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/Data/Array/Linear.hs), [`HsLinearDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsLinearDemo.hs)*
 
 GHC's `-XLinearTypes` extension can enforce exclusive ownership
 of mutable array regions at compile time. The design is inspired by

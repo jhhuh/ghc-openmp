@@ -15,12 +15,12 @@ all: build/libghcomp.so build/test_omp_basic_ghcomp build/test_omp_basic_native
 
 # ---- Shared library: RTS-backed OpenMP runtime ----
 
-build/ghc_omp_runtime_rts_pic.o: src/ghc_omp_runtime_rts.c
+build/ghc_omp_runtime_rts_pic.o: cbits/ghc_omp_runtime_rts.c
 	@mkdir -p build
 	$(CC) -DTHREADED_RTS -I$(RTS_INCDIR) $(CFLAGS) -fPIC \
 		-c $< -o $@
 
-build/HsStub_pic.o: src/HsStub.hs
+build/HsStub_pic.o: cbits/HsStub.hs
 	@mkdir -p build
 	$(GHC) -threaded -dynamic -c $< -o $@
 
@@ -35,30 +35,30 @@ build/libghcomp.so: build/ghc_omp_runtime_rts_pic.o build/HsStub_pic.o
 
 # ---- Phase 1: pthread-based stub runtime (reference) ----
 
-build/libghcomp_stub.so: src/ghc_omp_runtime.c
+build/libghcomp_stub.so: cbits/ghc_omp_runtime.c
 	@mkdir -p build
 	$(CC) -shared -fPIC $(CFLAGS) -o $@ $< -lpthread
 
 # Test program linked against our shared library (no GHC knowledge needed)
-build/test_omp_basic_ghcomp: src/test_omp_basic.c build/libghcomp.so
+build/test_omp_basic_ghcomp: cbits/test_omp_basic.c build/libghcomp.so
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -o $@ $< \
 		-Lbuild -Wl,-rpath,'$$ORIGIN' -lghcomp
 
 # Test program with native libgomp for comparison
-build/test_omp_basic_native: src/test_omp_basic.c
+build/test_omp_basic_native: cbits/test_omp_basic.c
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -o $@ $<
 
 # ---- Phase 2: GHC RTS embedding ----
 
 # Compile Haskell stub (pulls in base library closures)
-build/HsStub.o: src/HsStub.hs
+build/HsStub.o: cbits/HsStub.hs
 	@mkdir -p build
 	$(GHC) -threaded -c $< -o $@
 
 # GHC RTS embedding test
-build/test_rts_embed: src/test_rts_embed.c build/HsStub.o
+build/test_rts_embed: cbits/test_rts_embed.c build/HsStub.o
 	@mkdir -p build
 	$(CC) -DTHREADED_RTS -I$(RTS_INCDIR) $(CFLAGS) \
 		-c $< -o build/test_rts_embed.o
@@ -67,14 +67,14 @@ build/test_rts_embed: src/test_rts_embed.c build/HsStub.o
 		-o $@ -lpthread -lm
 
 # Compile RTS-backed runtime as object file (statically linked into test)
-build/ghc_omp_runtime_rts.o: src/ghc_omp_runtime_rts.c
+build/ghc_omp_runtime_rts.o: cbits/ghc_omp_runtime_rts.c
 	@mkdir -p build
 	$(CC) -DTHREADED_RTS -I$(RTS_INCDIR) $(CFLAGS) \
 		-c $< -o $@
 
 # Test program with RTS-backed runtime (statically linked, like test_rts_embed)
 # Uses ghc as linker to resolve all Haskell RTS symbols
-build/test_omp_rts: src/test_omp_basic.c build/ghc_omp_runtime_rts.o build/HsStub.o
+build/test_omp_rts: cbits/test_omp_basic.c build/ghc_omp_runtime_rts.o build/HsStub.o
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -c $< -o build/test_omp_basic_rts.o
 	$(GHC) -threaded -no-hs-main \
@@ -109,11 +109,11 @@ test-rts: build/test_omp_rts
 	@echo ""
 
 # Phase 18: Guided scheduling test
-build/test_guided_native: src/test_guided.c
+build/test_guided_native: cbits/test_guided.c
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -o $@ $< -lm
 
-build/test_guided_rts: src/test_guided.c build/ghc_omp_runtime_rts.o build/HsStub.o
+build/test_guided_rts: cbits/test_guided.c build/ghc_omp_runtime_rts.o build/HsStub.o
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -c $< -o build/test_guided_rts.o
 	$(GHC) -threaded -no-hs-main \
@@ -128,11 +128,11 @@ test-guided: build/test_guided_native build/test_guided_rts
 	@OMP_NUM_THREADS=4 build/test_guided_rts
 
 # Phase 18: Nested parallelism test
-build/test_nested_native: src/test_nested.c
+build/test_nested_native: cbits/test_nested.c
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -o $@ $<
 
-build/test_nested_rts: src/test_nested.c build/ghc_omp_runtime_rts.o build/HsStub.o
+build/test_nested_rts: cbits/test_nested.c build/ghc_omp_runtime_rts.o build/HsStub.o
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -c $< -o build/test_nested_rts.o
 	$(GHC) -threaded -no-hs-main \
@@ -151,24 +151,24 @@ test-all: test-native test-ghcomp test-rts-embed test-rts demo test-guided test-
 # ---- Phase 4: Haskell ↔ OpenMP Interop ----
 
 # Compile OpenMP compute library
-build/omp_compute.o: src/omp_compute.c
+build/omp_compute.o: cbits/omp_compute.c
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -c $< -o $@
 
 # Haskell driver that calls OpenMP C via FFI
 # ghc provides main, links our runtime + the C compute library
-build/hs_omp_demo: src/HsMain.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+build/hs_omp_demo: demos/HsMain.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build
 	$(GHC) -threaded -O2 \
-		src/HsMain.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		demos/HsMain.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_omp
 
 # Phase 5: Concurrent Haskell + OpenMP
-build/hs_concurrent: src/HsConcurrent.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+build/hs_concurrent: demos/HsConcurrent.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build
 	$(GHC) -threaded -O2 \
-		src/HsConcurrent.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		demos/HsConcurrent.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_conc_out
 
@@ -181,10 +181,10 @@ demo-concurrent: build/hs_concurrent
 	build/hs_concurrent +RTS -N4
 
 # Phase 6: GC interaction test
-build/gc_stress: src/HsGCStress.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+build/gc_stress: demos/HsGCStress.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build
 	$(GHC) -threaded -O2 \
-		src/HsGCStress.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		demos/HsGCStress.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_gc_out
 
@@ -193,10 +193,10 @@ demo-gc: build/gc_stress
 	build/gc_stress +RTS -N4 -s
 
 # Phase 7: Dense matrix multiply
-build/matmul_demo: src/HsMatMul.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+build/matmul_demo: demos/HsMatMul.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build
 	$(GHC) -threaded -O2 \
-		src/HsMatMul.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		demos/HsMatMul.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_matmul_out
 
@@ -205,10 +205,10 @@ demo-matmul: build/matmul_demo
 	build/matmul_demo +RTS -N4
 
 # Phase 9: Bidirectional interop (OpenMP -> Haskell callbacks)
-build/callback_demo: src/HsCallback.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+build/callback_demo: demos/HsCallback.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build
 	$(GHC) -threaded -O2 \
-		src/HsCallback.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		demos/HsCallback.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_callback_out
 
@@ -217,14 +217,14 @@ demo-callback: build/callback_demo
 	build/callback_demo +RTS -N4
 
 # Phase 10: Cmm primitives
-build/omp_prims.o: src/omp_prims.cmm
+build/omp_prims.o: cbits/omp_prims.cmm
 	@mkdir -p build
 	$(GHC) -c -x cmm $< -o $@
 
-build/cmm_demo: src/HsCmmDemo.hs build/omp_prims.o build/ghc_omp_runtime_rts.o
+build/cmm_demo: demos/HsCmmDemo.hs build/omp_prims.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build
 	$(GHC) -threaded -O2 \
-		src/HsCmmDemo.hs build/omp_prims.o build/ghc_omp_runtime_rts.o \
+		demos/HsCmmDemo.hs build/omp_prims.o build/ghc_omp_runtime_rts.o \
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_cmm_out
 
@@ -233,39 +233,39 @@ demo-cmm: build/cmm_demo
 	build/cmm_demo +RTS -N4
 
 # Phase 12: Batched safe calls via Cmm
-build/omp_batch.o: src/omp_batch.cmm
+build/omp_batch.o: cbits/omp_batch.cmm
 	@mkdir -p build
 	$(GHC) -c -x cmm $< -o $@
 
-build/cmm_batch: src/HsCmmBatch.hs build/omp_batch.o build/ghc_omp_runtime_rts.o
+build/cmm_batch: demos/HsCmmBatch.hs build/omp_batch.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build
 	$(GHC) -threaded -O2 \
-		src/HsCmmBatch.hs build/omp_batch.o build/ghc_omp_runtime_rts.o \
+		demos/HsCmmBatch.hs build/omp_batch.o build/ghc_omp_runtime_rts.o \
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_batch_out
 
 # Phase 13: Parallelism crossover analysis
-build/crossover: src/HsCrossover.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+build/crossover: demos/HsCrossover.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build
 	$(GHC) -threaded -O2 \
-		src/HsCrossover.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		demos/HsCrossover.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_crossover_out
 
 # Phase 15: Deferred task execution
-build/task_demo: src/HsTaskDemo.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+build/task_demo: demos/HsTaskDemo.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build
 	$(GHC) -threaded -O2 \
-		src/HsTaskDemo.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		demos/HsTaskDemo.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_task_out
 
 # Test task execution with native libgomp for comparison
-build/test_tasks_native: src/test_omp_tasks.c
+build/test_tasks_native: cbits/test_omp_tasks.c
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -o $@ $< -lm
 
-build/test_tasks_rts: src/test_omp_tasks.c build/ghc_omp_runtime_rts.o build/HsStub.o
+build/test_tasks_rts: cbits/test_omp_tasks.c build/ghc_omp_runtime_rts.o build/HsStub.o
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -c $< -o build/test_omp_tasks_rts.o
 	$(GHC) -threaded -no-hs-main \
@@ -284,10 +284,10 @@ test-tasks: build/test_tasks_native build/test_tasks_rts
 	@OMP_NUM_THREADS=4 build/test_tasks_rts
 
 # Phase 14: GHC native parallelism vs OpenMP
-build/par_compare: src/HsParCompare.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+build/par_compare: demos/HsParCompare.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build
 	$(GHC) -threaded -O2 \
-		src/HsParCompare.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		demos/HsParCompare.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_parcomp_out
 
@@ -304,10 +304,10 @@ demo-batch: build/cmm_batch
 	build/cmm_batch +RTS -N4
 
 # Phase 16: Zero-copy FFI with pinned ByteArray
-build/zerocopy_demo: src/HsZeroCopy.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+build/zerocopy_demo: demos/HsZeroCopy.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build
 	$(GHC) -threaded -O2 \
-		src/HsZeroCopy.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		demos/HsZeroCopy.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
 		-o $@ -lpthread -lm \
 		-outputdir build/hs_zerocopy_out
 
@@ -316,12 +316,12 @@ demo-zerocopy: build/zerocopy_demo
 	build/zerocopy_demo +RTS -N4
 
 # Phase 17: Linear typed arrays
-build/linear_demo: src/HsLinearDemo.hs src/Data/Array/Linear.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
+build/linear_demo: demos/HsLinearDemo.hs demos/Data/Array/Linear.hs build/omp_compute.o build/ghc_omp_runtime_rts.o
 	@mkdir -p build
 	$(GHC) -threaded -O2 \
-		src/HsLinearDemo.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		demos/HsLinearDemo.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
 		-o $@ -lpthread -lm \
-		-isrc \
+		-idemos \
 		-outputdir build/hs_linear_out
 
 demo-linear: build/linear_demo
@@ -330,11 +330,11 @@ demo-linear: build/linear_demo
 
 # ---- Benchmarks ----
 
-build/bench_native: src/bench_overhead.c
+build/bench_native: cbits/bench_overhead.c
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -o $@ $< -lm
 
-build/bench_rts: src/bench_overhead.c build/ghc_omp_runtime_rts.o build/HsStub.o
+build/bench_rts: cbits/bench_overhead.c build/ghc_omp_runtime_rts.o build/HsStub.o
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -c $< -o build/bench_overhead_rts.o
 	$(GHC) -threaded -no-hs-main \
@@ -342,11 +342,11 @@ build/bench_rts: src/bench_overhead.c build/ghc_omp_runtime_rts.o build/HsStub.o
 		-o $@ -lpthread -lm
 
 # DGEMM benchmark — native vs RTS
-build/bench_dgemm_native: src/bench_dgemm.c
+build/bench_dgemm_native: cbits/bench_dgemm.c
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -o $@ $< -lm
 
-build/bench_dgemm_rts: src/bench_dgemm.c build/ghc_omp_runtime_rts.o build/HsStub.o
+build/bench_dgemm_rts: cbits/bench_dgemm.c build/ghc_omp_runtime_rts.o build/HsStub.o
 	@mkdir -p build
 	$(CC) -fopenmp $(CFLAGS) -c $< -o build/bench_dgemm_rts.o
 	$(GHC) -threaded -no-hs-main \

@@ -1,6 +1,6 @@
 ## Appendix: Sense-Reversing Barrier
 
-*Source: [`spin_barrier_wait`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/ghc_omp_runtime_rts.c#FN:spin_barrier_wait), [`spin_barrier_wait_tasks`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/ghc_omp_runtime_rts.c#FN:spin_barrier_wait_tasks)*
+*Source: [`spin_barrier_wait`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/ghc_omp_runtime_rts.c#FN:spin_barrier_wait), [`spin_barrier_wait_tasks`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/ghc_omp_runtime_rts.c#FN:spin_barrier_wait_tasks)*
 
 The runtime's barrier is a **centralized sense-reversing barrier** from
 Mellor-Crummey & Scott ("Algorithms for Scalable Synchronization on
@@ -53,7 +53,7 @@ The `OMP_WAIT_POLICY` environment variable controls aggressiveness:
 
 ### Task-Stealing Variant
 
-[`spin_barrier_wait_tasks`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/ghc_omp_runtime_rts.c#FN:spin_barrier_wait_tasks)
+[`spin_barrier_wait_tasks`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/ghc_omp_runtime_rts.c#FN:spin_barrier_wait_tasks)
 extends the barrier with work stealing during the spin-wait phase:
 
 - **While waiting**: If `g_tasks_pending > 0`, attempt to steal and
