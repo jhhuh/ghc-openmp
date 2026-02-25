@@ -11,8 +11,8 @@ description:
   template in @data/@.
 license:       BSD-3-Clause
 license-file:  LICENSE
-author:        jhhuh
-maintainer:    jhhuh
+author:        Ji-Haeng Huh
+maintainer:    Ji-Haeng Huh
 homepage:      https://github.com/jhhuh/ghc-openmp
 bug-reports:   https://github.com/jhhuh/ghc-openmp/issues
 category:      Concurrency, FFI
