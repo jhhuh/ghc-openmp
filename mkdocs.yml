@@ -37,3 +37,4 @@ docs_dir: docs
 
 exclude_docs: |
   gen_charts.hs
+  sections/

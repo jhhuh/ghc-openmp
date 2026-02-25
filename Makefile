@@ -4,29 +4,44 @@ CFLAGS = -Wall -Wextra -O2 -g
 
 # GHC RTS paths (auto-discovered from ghc --print-libdir)
 GHC_LIBDIR := $(shell $(GHC) --print-libdir 2>/dev/null)
+GHC_VER := $(shell $(GHC) --numeric-version 2>/dev/null)
 RTS_INCDIR := $(shell find $(GHC_LIBDIR) -name 'Rts.h' -path '*/include/*' -print -quit 2>/dev/null | xargs dirname)
+RTS_SODIR := $(shell find $(GHC_LIBDIR) -maxdepth 2 -name 'libHSrts*_thr-ghc*.so' -print -quit 2>/dev/null | xargs dirname)
+RTS_LIBNAME := $(shell find $(GHC_LIBDIR) -maxdepth 2 -name 'libHSrts*_thr-ghc*.so' -print -quit 2>/dev/null | xargs basename | sed 's/^lib//; s/\.so$$//')
 
 .PHONY: all clean test test-native test-ghcomp test-rts-embed test-both
 
 all: build/libghcomp.so build/test_omp_basic_ghcomp build/test_omp_basic_native
 
-# ---- Phase 1: pthread-based stub runtime ----
+# ---- Shared library: RTS-backed OpenMP runtime ----
 
-# Our replacement runtime (pthread-based)
-build/libghcomp.so: src/ghc_omp_runtime.c
+build/ghc_omp_runtime_rts_pic.o: src/ghc_omp_runtime_rts.c
+	@mkdir -p build
+	$(CC) -DTHREADED_RTS -I$(RTS_INCDIR) $(CFLAGS) -fPIC \
+		-c $< -o $@
+
+build/HsStub_pic.o: src/HsStub.hs
+	@mkdir -p build
+	$(GHC) -threaded -dynamic -c $< -o $@
+
+build/libghcomp.so: build/ghc_omp_runtime_rts_pic.o build/HsStub_pic.o
+	@mkdir -p build
+	$(GHC) -shared -dynamic -threaded -no-hs-main \
+		build/ghc_omp_runtime_rts_pic.o build/HsStub_pic.o \
+		-o $@ -lpthread -lm \
+		-optl-L$(RTS_SODIR) -optl-l$(RTS_LIBNAME) \
+		-optl-Wl,-rpath,$(RTS_SODIR) \
+		-optl-Wl,-soname,libghcomp.so
+
+# ---- Phase 1: pthread-based stub runtime (reference) ----
+
+build/libghcomp_stub.so: src/ghc_omp_runtime.c
 	@mkdir -p build
 	$(CC) -shared -fPIC $(CFLAGS) -o $@ $< -lpthread
 
-# Test program linked against our runtime
+# Test program linked against our shared library (no GHC knowledge needed)
 build/test_omp_basic_ghcomp: src/test_omp_basic.c build/libghcomp.so
 	@mkdir -p build
-	$(CC) -fopenmp $(CFLAGS) -o $@ $< \
-		-Lbuild -Wl,-rpath,'$$ORIGIN' \
-		-lghcomp \
-		-nostdlib \
-		$(shell $(CC) -print-file-name=crtbeginS.o 2>/dev/null || true) \
-		-lc -lgcc -lgcc_s \
-		2>/dev/null || \
 	$(CC) -fopenmp $(CFLAGS) -o $@ $< \
 		-Lbuild -Wl,-rpath,'$$ORIGIN' -lghcomp
 
@@ -389,7 +404,10 @@ PREFIX ?= /usr/local
 install: build-all
 	install -d $(DESTDIR)$(PREFIX)/bin
 	install -d $(DESTDIR)$(PREFIX)/lib
+	install -d $(DESTDIR)$(PREFIX)/lib/pkgconfig
 	install -m 755 build/libghcomp.so $(DESTDIR)$(PREFIX)/lib/
+	sed 's|@PREFIX@|$(PREFIX)|g; s|@VERSION@|0.18.0|g' \
+		ghcomp.pc.in > $(DESTDIR)$(PREFIX)/lib/pkgconfig/ghcomp.pc
 	for f in $(filter-out build/libghcomp.so build/%.o,$(BUILD_ALL_BINS)); do \
 		install -m 755 $$f $(DESTDIR)$(PREFIX)/bin/$$(basename $$f); \
 	done

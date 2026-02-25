@@ -5,7 +5,7 @@ title: "GHC's Runtime System as an OpenMP Runtime"
 
 # GHC's Runtime System as an OpenMP Runtime
 
-*A feasibility study in replacing libgomp with GHC RTS Capabilities*
+*An OpenMP runtime backed by GHC RTS Capabilities*
 
 ---
 
@@ -177,7 +177,7 @@ flowchart TD
 
     subgraph RTS["GHC Runtime System"]
         direction LR
-        C0["Cap 0<br/>(master)"] ~~~ C1["Cap 1<br/>(worker)"] ~~~ C2["Cap 2<br/>(worker)"] ~~~ C3["Cap 3<br/>(worker)"]
+        C0["Cap 0<br/>(master)"] ~~~ C1["Cap 1<br/>(worker)"] ~~~ C2["Cap 2<br/>(worker)"] ~~~ CD["..."] ~~~ CN["Cap N-1<br/>(worker)"]
     end
 
     style Host fill:#f9f9f9,stroke:#999

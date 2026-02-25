@@ -1,0 +1,40 @@
+=== Phase 14: GHC Native Parallelism vs OpenMP ===
+
+GHC Capabilities: 4
+OpenMP threads:   4
+
+--- sinsum: sequential Haskell vs parallel Haskell vs OpenMP ---
+
+  Elements   | Seq Haskell  | Seq C        | Par Haskell  | Par OpenMP   | Hs/OMP  | C/OMP  
+  -----------|--------------|--------------|--------------|--------------|---------|--------
+       1000 |      18.1 us |       7.6 us |      18.3 us |       5.7 us |  3.24x  |  1.33x
+       5000 |     110.2 us |      49.0 us |      46.2 us |      26.9 us |  1.72x  |  1.82x
+      10000 |     233.6 us |     105.8 us |      77.8 us |      51.1 us |  1.52x  |  2.07x
+      50000 |    1229.9 us |     864.7 us |     348.0 us |     257.0 us |  1.35x  |  3.36x
+     100000 |    2472.0 us |    1104.6 us |     634.9 us |     515.4 us |  1.23x  |  2.14x
+     500000 |   12062.6 us |    5541.9 us |    3125.9 us |    2513.8 us |  1.24x  |  2.20x
+    1000000 |   24136.5 us |   11088.9 us |    6094.4 us |    5037.8 us |  1.21x  |  2.20x
+    5000000 |  120740.1 us |   55059.8 us |   30238.1 us |   15514.9 us |  1.95x  |  3.55x
+   10000000 |  241447.8 us |  111060.6 us |   60838.7 us |   30872.0 us |  1.97x  |  3.60x
+
+--- Correctness verification ---
+  Sequential Haskell: 137.9342990594
+  Parallel Haskell:   137.9342990594 (diff = 5.1e-12)
+  Sequential C:       137.9342990594 (diff = 0.0e0)
+  Parallel OpenMP:    137.9342990594 (diff = 5.1e-12)
+
+--- Analysis ---
+  OpenMP (C) advantages:
+    - Unboxed computation: no allocation, no GC pressure
+    - GCC vectorization: SIMD for numeric loops
+    - Cache-friendly: contiguous memory, no thunk indirection
+
+  Haskell forkIO advantages:
+    - No FFI boundary: works on Haskell data structures directly
+    - Lightweight: thousands of green threads at low cost
+    - Composable: integrates with STM, async, streaming
+
+  Guideline: use OpenMP for unboxed numeric arrays,
+  Haskell parallelism for functional transformations.
+
+=== Done ===

@@ -1,4 +1,6 @@
-packages: .
+packages:
+  .
+  demos/inline-cmm
 
 source-repository-package
   type: git

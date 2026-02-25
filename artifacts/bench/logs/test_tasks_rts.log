@@ -1,0 +1,13 @@
+Threads: 4
+
+--- Test 1: Correctness (10000 tasks, 1000 work/task) ---
+  Reference:  1952.3080127738
+  Tasks:      1952.3080127738
+  Match: YES (diff = 0.0e+00)
+
+--- Test 2: Performance ---
+  Sequential:  0.0 ms
+  Tasks (4T):  36.3 ms
+  Speedup:     0.00x
+
+=== Done ===

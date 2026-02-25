@@ -1,0 +1,22 @@
+=== Phase 10: Cmm Primitives — Calling Convention Benchmark ===
+
+  Cmm prim:   cap_no = 3
+  Unsafe FFI: thread_num = 0, num_procs = 12
+  Safe FFI:   thread_num = 0
+
+--- Calling convention overhead (best of 5, interleaved) ---
+  prim:      0.0 ns/call  (100000000 iters)
+  unsafe:    2.3 ns/call  (10000000 iters)
+  safe:     66.6 ns/call  (1000000 iters)
+
+--- Overhead ratios ---
+  unsafe/prim: 12917787.2x
+  safe/prim:   370117500.0x
+  safe/unsafe:  28.7x
+
+--- Interpretation ---
+  prim:   ~0.0 ns  (Cmm: register read, no FFI boundary)
+  unsafe: ~2 ns  (C call: STG register save/restore)
+  safe:   ~67 ns  (+ suspendThread/resumeThread)
+
+=== Done ===

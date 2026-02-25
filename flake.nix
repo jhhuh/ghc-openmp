@@ -1,5 +1,5 @@
 {
-  description = "GHC Runtime as OpenMP Runtime - exploration project";
+  description = "GHC Runtime as OpenMP Runtime";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -49,14 +49,34 @@
           pname = "ghc-openmp-docs";
           version = "0.18.0";
           src = ./.;
-          nativeBuildInputs = [ ghcWithCharts mkdocsEnv pkgs.glibcLocales ];
+          nativeBuildInputs = [ ghcWithCharts mkdocsEnv pkgs.glibcLocales pkgs.gawk ];
           buildPhase = ''
             export LANG=en_US.UTF-8
             export LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive
+
+            # Concatenate section files into single index.md
+            cat docs/sections/*.md > docs/index.md
+
             ghc -O2 -tmpdir /tmp -hidir /tmp -odir /tmp -stubdir /tmp -o gen_charts docs/gen_charts.hs
             (cd docs && ../gen_charts)
             rm gen_charts
             substituteInPlace docs/index.md --replace-quiet GIT_COMMIT "${self.rev or "main"}"
+
+            # Resolve #FN:function_name anchors to line ranges
+            for fn in $(grep -oE '#FN:[A-Za-z_0-9]+' docs/index.md | sed 's/#FN://' | sort -u); do
+              start=$(grep -n "''${fn}(" src/ghc_omp_runtime_rts.c | head -1 | cut -d: -f1)
+              if [ -z "$start" ]; then
+                echo "WARNING: no definition for ''${fn}" >&2; continue
+              fi
+              if sed -n "''${start}p" src/ghc_omp_runtime_rts.c | grep -q '{.*}'; then
+                anchor="#L''${start}"
+              else
+                end=$(awk -v s="$start" 'NR>s && /^\}/ {print NR; exit}' src/ghc_omp_runtime_rts.c)
+                anchor="#L''${start}-L''${end}"
+              fi
+              substituteInPlace docs/index.md --replace-quiet "#FN:''${fn}" "$anchor"
+            done
+
             mkdocs build -d _site
           '';
           installPhase = ''
@@ -128,6 +148,14 @@
             drv = mkRunner "docs" ''
               echo "Serving docs at http://localhost:8080"
               ${pkgs.python3}/bin/python3 -m http.server 8080 -d ${docs}
+            '';
+          };
+
+          benchmark = flake-utils.lib.mkApp {
+            drv = mkRunner "benchmark" ''
+              set -e
+              p=${ghc-openmp}/bin
+              ${pkgs.bash}/bin/bash ${./scripts/run_benchmarks.sh} "$p"
             '';
           };
 

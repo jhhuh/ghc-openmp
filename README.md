@@ -1,6 +1,6 @@
 # ghc-openmp: GHC's Runtime System as an OpenMP Runtime
 
-An experimental OpenMP runtime that uses GHC's Runtime System (RTS) as its
+An OpenMP runtime that uses GHC's Runtime System (RTS) as its
 thread pool and scheduler infrastructure. Standard OpenMP C code compiled with
 `gcc -fopenmp` runs on GHC Capabilities instead of libgomp's pthreads, enabling
 seamless interoperation between Haskell and OpenMP-parallelized C code.
@@ -34,8 +34,8 @@ ghc_omp_runtime_rts.c  (our OpenMP runtime)
         | dispatches to worker pool
         v
 GHC RTS Capabilities (OS threads)
-  Cap 0    Cap 1    Cap 2    Cap 3
-  (master) (worker) (worker) (worker)
+  Cap 0    Cap 1    Cap 2    ...    Cap N-1
+  (master) (worker) (worker)        (worker)
 ```
 
 OpenMP workers are permanent OS threads pinned to GHC Capabilities via

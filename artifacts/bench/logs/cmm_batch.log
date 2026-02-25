@@ -1,0 +1,22 @@
+=== Phase 12: Batched Safe Calls via Cmm ===
+
+  cmm_safe_tid:    thread_num = 0
+  cmm_batched(10): sum = 0 (expected 0 on main thread)
+
+--- Per-call overhead at different batch sizes ---
+  Batch size | Standard safe | Cmm batched | Speedup
+  -----------|---------------|-------------|--------
+           1 |      70.7 ns  |      68.9 ns |   1.0x
+           2 |      72.3 ns  |      35.9 ns |   2.0x
+           5 |      71.2 ns  |      15.4 ns |   4.6x
+          10 |      70.7 ns  |       8.8 ns |   8.0x
+          20 |      71.7 ns  |       5.3 ns |  13.5x
+          50 |      71.3 ns  |       3.4 ns |  20.9x
+         100 |      71.1 ns  |       2.7 ns |  26.5x
+
+--- Analysis ---
+  Standard safe: each call pays ~65ns suspend/resume overhead.
+  Cmm batched: one suspend/resume (~65ns) amortized over N calls.
+  At batch=100: per-call overhead approaches unsafe FFI (~2ns).
+
+=== Done ===

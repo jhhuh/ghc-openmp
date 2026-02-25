@@ -204,3 +204,43 @@ links. Jekyll/kramdown keeps them.
 1. Hakyll in nix needs `glibcLocales` + `LANG=en_US.UTF-8`.
 2. `installPhase` needs `mkdir -p $out` before `cp -r _site/* $out/`.
 3. Switched Pages from branch-based Jekyll to Actions deployment.
+
+## 2026-02-25: Packaging, benchmarks, docs split
+
+### libghcomp.so with RTS linkage
+Built `libghcomp.so` from `ghc_omp_runtime_rts.c` (PIC) + `HsStub.hs` (dynamic).
+Key insight: GHC's shared libraries don't list `libHSrts_thr.so` as a dependency.
+Must explicitly link it and embed rpath:
+```
+-optl-L$(RTS_SODIR) -optl-l$(RTS_LIBNAME) -optl-Wl,-rpath,$(RTS_SODIR)
+```
+Plain `gcc -fopenmp test.c -lghcomp` now works — GHC RTS boots transparently.
+
+### Cabal package
+Created `ghc-openmp.cabal` with `c-sources: src/ghc_omp_runtime_rts.c`. Haskell
+consumers compile the runtime with their own GHC (no ABI conflicts). Moved
+`inline-cmm-demo.cabal` to `demos/inline-cmm/` to avoid multiple-cabal-file error.
+`lib/GHC/OpenMP.hs` has full Haddock coverage (100%).
+
+### Benchmark infrastructure
+`nix run .#benchmark` runs all benchmarks, captures:
+- System info → `artifacts/bench/system_info.json`
+- Raw logs → `artifacts/bench/logs/*.log`
+- Parsed results → `artifacts/bench/results.json`
+- Markdown tables → `artifacts/bench/summary.md`
+
+Bash gotcha: `local a="$1" b="$2" c="$a"` — `$a` in third assignment uses the
+PRE-local value, not the one just assigned. Must split `local` declarations.
+
+### Docs split
+Split 1388-line `docs/index.md` into 19 files under `docs/sections/`. Build-time
+concatenation via `cat docs/sections/*.md > docs/index.md` in flake.nix. Added
+`docs/index.md` to `.gitignore`. MkDocs `exclude_docs: sections/` prevents
+double-processing.
+
+### Architecture diagram
+Added `...` / `Cap N-1` ellipses to ASCII art (README.md) and Mermaid (index.md).
+
+### Sense-reversing barrier appendix
+New `docs/sections/A5-barrier.md` explaining Mellor-Crummey & Scott barrier,
+`spin_barrier_t`, hybrid spin-wait, task-stealing variant.

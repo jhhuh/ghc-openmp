@@ -1,0 +1,9 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+
+Name: ghcomp
+Description: OpenMP runtime backed by GHC RTS Capabilities
+URL: https://github.com/jhhuh/ghc-openmp
+Version: @VERSION@
+Libs: -L${libdir} -lghcomp
+Cflags: -fopenmp
