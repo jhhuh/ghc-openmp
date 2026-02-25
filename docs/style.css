@@ -1,6 +1,6 @@
 /* ── Variables ─────────────────────────────────────── */
 :root {
-  --max-width: 52rem;
+  --max-width: 42rem;
   --font-body: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, 'Liberation Mono', monospace;
   --color-text: #1e293b;

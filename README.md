@@ -48,71 +48,39 @@ OpenMP workers are permanent OS threads pinned to GHC Capabilities via
 Capabilities — they are plain OS threads spinning on atomic variables,
 invisible to GHC's garbage collector.
 
+## Documentation
+
+Full write-up with charts and benchmarks: **https://jhhuh.github.io/ghc-openmp/**
+
+Built with Hakyll and the Haskell Chart library (static SVGs at build time, no client-side JS).
+
+```bash
+nix build .#docs       # Build static site to ./result/
+nix run .#docs         # Serve locally at http://localhost:8080
+```
+
 ## Quick Start
 
 ### Prerequisites
 
-- [Nix](https://nixos.org/) with flakes enabled (provides GHC 9.10.3, GCC 15.2)
+- [Nix](https://nixos.org/) with flakes enabled (provides GHC, GCC, all dependencies)
 
 ### Build & Run
 
 ```bash
-# Build all binaries (reproducible, no nix develop needed)
+# Build all binaries
 nix build
 
-# Run test/bench suites via nix
+# Run tests and benchmarks
 nix run .#test-all
 nix run .#bench
 nix run .#test-tasks
 nix run .#bench-dgemm
 
-# Or: enter development environment for interactive use
+# Interactive development
 nix develop
-
-# Build everything
 make all
-
-# Run tests
 make test-all
-
-# Run Haskell -> OpenMP interop demo
-make demo             # Phase 4: FFI interop
-make demo-concurrent  # Phase 5: concurrent Haskell + OpenMP
-make demo-gc          # Phase 6: GC stress test
-make demo-matmul      # Phase 7: dense matrix multiply
-make demo-callback    # Phase 9: bidirectional interop (OpenMP -> Haskell)
-make demo-cmm         # Phase 10: Cmm primitives calling convention benchmark
-cabal run inline-cmm-demo -- +RTS -N4  # Phase 11: inline-cmm quasiquoter
-make demo-batch       # Phase 12: batched safe calls (27x overhead reduction)
-make demo-crossover   # Phase 13: parallelism crossover analysis
-make demo-parcompare  # Phase 14: GHC forkIO vs OpenMP
-make demo-tasks       # Phase 15: deferred task execution
-make test-tasks       # Phase 15: native vs RTS task comparison
-make demo-zerocopy    # Phase 16: zero-copy FFI with pinned ByteArray
-make demo-linear      # Phase 17: linear typed arrays (type-safe parallel access)
-
-# Run benchmarks
-make bench            # microbenchmarks: native vs RTS
-make bench-dgemm      # DGEMM: native vs RTS at 1/2/4/8 threads
-```
-
-### Manual Build (without Make)
-
-```bash
-# Compile the runtime (find RTS include dir dynamically)
-RTS_INCDIR=$(find $(ghc --print-libdir) -name 'Rts.h' -path '*/include/*' -print -quit | xargs dirname)
-gcc -DTHREADED_RTS -I$RTS_INCDIR \
-    -Wall -O2 -c src/ghc_omp_runtime_rts.c -o build/ghc_omp_runtime_rts.o
-
-# Compile OpenMP C library
-gcc -fopenmp -Wall -O2 -c src/omp_compute.c -o build/omp_compute.o
-
-# Link Haskell driver
-ghc -threaded -O2 src/HsMain.hs build/omp_compute.o build/ghc_omp_runtime_rts.o \
-    -o build/hs_omp_demo -lpthread -lm
-
-# Run with 4 GHC capabilities
-build/hs_omp_demo +RTS -N4
 ```
 
 ## Project Structure
