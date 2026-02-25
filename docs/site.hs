@@ -65,6 +65,7 @@ buildCharts = do
 chartArchitecture :: IO ()
 chartArchitecture = writeFile "charts/architecture.svg" $ unlines
   [ "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 640 380\""
+  , "     width=\"640\" height=\"380\""
   , "     font-family=\"'Inter',system-ui,-apple-system,sans-serif\">"
   , ""
   , "  <!-- Entry points -->"
