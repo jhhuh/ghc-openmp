@@ -35,26 +35,31 @@
         # Helper to make a runner script
         mkRunner = name: script: pkgs.writeShellScriptBin name script;
 
-        ghcWithHakyll = pkgs.haskellPackages.ghcWithPackages (p: [
-          p.hakyll
+        ghcWithCharts = pkgs.haskellPackages.ghcWithPackages (p: [
           p.Chart
           p.Chart-diagrams
+        ]);
+
+        mkdocsEnv = pkgs.python3.withPackages (pp: [
+          pp.mkdocs
+          pp.mkdocs-material
         ]);
 
         docs = pkgs.stdenv.mkDerivation {
           pname = "ghc-openmp-docs";
           version = "0.18.0";
-          src = ./docs;
-          nativeBuildInputs = [ ghcWithHakyll pkgs.glibcLocales ];
+          src = ./.;
+          nativeBuildInputs = [ ghcWithCharts mkdocsEnv pkgs.glibcLocales ];
           buildPhase = ''
             export LANG=en_US.UTF-8
             export LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive
-            ghc -O2 -threaded -o site site.hs
-            ./site build
+            ghc -O2 -tmpdir /tmp -hidir /tmp -odir /tmp -stubdir /tmp -o gen_charts docs/gen_charts.hs
+            (cd docs && ../gen_charts)
+            rm gen_charts
+            mkdocs build -d _site
           '';
           installPhase = ''
-            mkdir -p $out
-            cp -r _site/* $out/
+            cp -r _site $out
           '';
         };
       in

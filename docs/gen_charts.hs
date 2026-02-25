@@ -1,58 +1,23 @@
-{-# LANGUAGE OverloadedStrings #-}
-
-import Data.Char (isAlphaNum, isSpace)
 import Data.Colour.SRGB (sRGB24)
 import Data.Default.Class (def)
-import qualified Data.Text as T
 import Graphics.Rendering.Chart.Backend.Diagrams (FileOptions (..), toFile)
 import Graphics.Rendering.Chart.Easy
-import Hakyll
 import System.Directory (createDirectoryIfMissing)
-import Text.Pandoc.Definition (Block (..), Inline (..), Pandoc)
-import Text.Pandoc.Walk (walk)
 
--- Colors matching the original Mermaid charts
+-- Colors
 clRed, clGreen, clGray, clBlue, clAmber, clLtGray :: Colour Double
-clRed = sRGB24 0xef 0x44 0x44 -- #ef4444
-clGreen = sRGB24 0x05 0x96 0x69 -- #059669
-clGray = sRGB24 0x64 0x74 0x8b -- #64748b
-clBlue = sRGB24 0x25 0x63 0xeb -- #2563eb
-clAmber = sRGB24 0xd9 0x77 0x06 -- #d97706
-clLtGray = sRGB24 0x94 0xa3 0xb8 -- #94a3b8
+clRed = sRGB24 0xef 0x44 0x44
+clGreen = sRGB24 0x05 0x96 0x69
+clGray = sRGB24 0x64 0x74 0x8b
+clBlue = sRGB24 0x25 0x63 0xeb
+clAmber = sRGB24 0xd9 0x77 0x06
+clLtGray = sRGB24 0x94 0xa3 0xb8
 
 chartSize :: (Double, Double)
 chartSize = (700, 400)
 
 main :: IO ()
 main = do
-  buildCharts
-  hakyll $ do
-    match "style.css" $ do
-      route idRoute
-      compile compressCssCompiler
-
-    match "templates/*" $
-      compile templateBodyCompiler
-
-    match "charts/*.svg" $ do
-      route idRoute
-      compile copyFileCompiler
-
-    match "index.md" $ do
-      route $ setExtension "html"
-      compile $
-        pandocCompilerWithTransform
-          defaultHakyllReaderOptions
-          defaultHakyllWriterOptions
-          fixHeadingIds
-          >>= loadAndApplyTemplate "templates/default.html" defaultContext
-
--- ---------------------------------------------------------------------------
--- Chart generation
--- ---------------------------------------------------------------------------
-
-buildCharts :: IO ()
-buildCharts = do
   createDirectoryIfMissing True "charts"
   chartArchitecture
   chartOptimizationJourney
@@ -60,6 +25,7 @@ buildCharts = do
   chartCrossover
   chartFfiOverhead
   chartBatchedCalls
+  putStrLn "Generated 6 charts in charts/"
 
 -- Architecture diagram — boxed components with U-shaped flow
 chartArchitecture :: IO ()
@@ -207,7 +173,7 @@ chartArchitecture = writeFile "charts/architecture.svg" $ unlines
   , "</svg>"
   ]
 
--- Chart 1: Optimization Journey — grouped bar, 3 series × 2 categories
+-- Chart 1: Optimization Journey — grouped bar, 3 series x 2 categories
 chartOptimizationJourney :: IO ()
 chartOptimizationJourney =
   toFile (def {_fo_size = chartSize}) "charts/optimization-journey.svg" $ do
@@ -221,7 +187,7 @@ chartOptimizationJourney =
           ["Phase 2 (mutex+condvar)", "Phase 3 (lock-free)", "Native libgomp"]
           (addIndexes ([[24.35, 0.81, 0.97], [7.01, 0.25, 0.51]] :: [[Double]]))
 
--- Chart 2: DGEMM Head-to-Head — grouped bar, 2 series × 4 categories
+-- Chart 2: DGEMM Head-to-Head — grouped bar, 2 series x 4 categories
 chartDgemmComparison :: IO ()
 chartDgemmComparison =
   toFile (def {_fo_size = chartSize}) "charts/dgemm-comparison.svg" $ do
@@ -273,38 +239,3 @@ chartBatchedCalls =
     let idx = map PlotIndex [0 ..]
     plot $ line "Cmm batched" [zip idx ([69.1, 36.1, 15.2, 8.7, 5.3, 3.4, 2.7] :: [Double])]
     plot $ line "Standard safe" [zip idx ([72.4, 71.3, 73.0, 71.0, 71.1, 71.7, 71.4] :: [Double])]
-
--- ---------------------------------------------------------------------------
--- Pandoc transform: Jekyll-compatible heading IDs
--- ---------------------------------------------------------------------------
-
--- Generate heading IDs matching Jekyll/kramdown convention.
--- Jekyll keeps leading numbers ("1-abstract"); pandoc strips them ("abstract").
-fixHeadingIds :: Pandoc -> Pandoc
-fixHeadingIds = walk go
-  where
-    go :: Block -> Block
-    go (Header lvl (_, cls, kvs) ils) =
-      Header lvl (jekyllId (extractText ils), cls, kvs) ils
-    go b = b
-
-    extractText :: [Inline] -> T.Text
-    extractText = foldMap inlineText
-
-    inlineText :: Inline -> T.Text
-    inlineText (Str t) = t
-    inlineText Space = " "
-    inlineText SoftBreak = " "
-    inlineText (Code _ t) = t
-    inlineText (Emph is) = extractText is
-    inlineText (Strong is) = extractText is
-    inlineText (Strikeout is) = extractText is
-    inlineText (Link _ is _) = extractText is
-    inlineText _ = ""
-
-    jekyllId :: T.Text -> T.Text
-    jekyllId =
-      T.intercalate "-"
-        . T.words
-        . T.filter (\c -> isAlphaNum c || isSpace c || c == '-')
-        . T.toLower
