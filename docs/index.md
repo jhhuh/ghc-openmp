@@ -821,15 +821,65 @@ manual work splitting compare to OpenMP via safe FFI?
 | 10M | 243418 us | 113917 us | 65448 us | 33303 us | 2.0x |
 
 OpenMP is consistently **~2x faster** than parallel Haskell. The gap comes
-entirely from per-element cost (C is 2.1x faster than Haskell for `sin()`
-due to GCC's superior scalar code generation — instruction scheduling,
-register allocation, and built-in math function handling), not from
-parallelism overhead — both achieve near-ideal scaling on 4 threads.
+entirely from per-element cost (C is 2.1x faster than Haskell for `sin()`),
+not from parallelism overhead — both achieve near-ideal scaling on 4 threads.
 
-> **Note:** GHC `-O2` already fully unboxes the inner loop (`sinDouble#`,
-> `+##`, `*##` on `Double#`), and GCC does not vectorize `sin()` calls.
-> Neither boxing nor SIMD explains the gap — it is purely code generator
-> quality for scalar numeric code.
+#### Root Cause Analysis
+
+GHC `-O2` already fully unboxes the inner loop (`sinDouble#`, `+##`, `*##`
+on `Double#`), and GCC does not vectorize `sin()` calls. Neither boxing nor
+SIMD explains the gap — it is GHC's native code generator (NCG) producing
+less efficient machine code.
+
+The NCG inner loop has **~17 instructions** per iteration vs GCC's **~10**:
+
+```asm
+# GHC NCG: 17 instructions/iter
+cvtsi2sdq %r14, %xmm1        # i -> double
+mulsd   .Ln3Sj(%rip), %xmm1  # * 0.001
+subq    $8, %rsp              # stack adjust (every iter!)
+movsd   %xmm0, %xmm2         # shuffle acc
+movsd   %xmm1, %xmm0         # move arg for sin()
+movl    $1, %eax              # varargs ABI marker
+movsd   %xmm2, 72(%rsp)      # spill acc
+movq    %rsi, %rbx            # save STG register
+call    sin
+addq    $8, %rsp              # restore stack
+movsd   64(%rsp), %xmm1      # reload acc
+addsd   %xmm0, %xmm1         # acc += sin(...)
+incq    %r14                  # i++
+movsd   %xmm1, %xmm0         # shuffle back
+movq    %rbx, %rsi            # restore STG register
+cmpq    %rsi, %r14            # i < hi?
+jl      loop
+```
+
+The extra instructions come from: (1) saving/restoring STG registers (`%rsi`)
+around the `sin()` C call, (2) stack frame adjustment every iteration instead
+of once, (3) unnecessary register shuffles from the NCG's naive allocator,
+and (4) a varargs ABI marker (`movl $1, %eax`).
+
+#### LLVM Backend Eliminates the Gap
+
+Compiling with `-fllvm` produces a **10-instruction loop** — matching GCC:
+
+```asm
+# GHC LLVM backend: 10 instructions/iter
+movsd   %xmm1, 16(%rsp)       # spill acc (same as GCC)
+xorps   %xmm0, %xmm0
+cvtsi2sd %r14, %xmm0          # i -> double
+mulsd   .LCPI20_0(%rip), %xmm0 # * 0.001
+callq   sin@PLT
+movsd   16(%rsp), %xmm1       # reload acc
+addsd   %xmm0, %xmm1          # acc += sin(...)
+incq    %r14                   # i++
+cmpq    %r14, %r15             # i < hi?
+jne     loop
+```
+
+LLVM hoists the STG register save/restore outside the loop, allocates the
+stack frame once, and eliminates all redundant shuffles. The 2x gap is purely
+an NCG limitation, not a fundamental Haskell overhead.
 
 ### 8.6 Task Execution
 
