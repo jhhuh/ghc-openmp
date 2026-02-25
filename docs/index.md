@@ -4,10 +4,6 @@ title: "GHC's Runtime System as an OpenMP Runtime"
 subtitle: "A feasibility study in replacing libgomp with GHC RTS Capabilities"
 ---
 
-# GHC's Runtime System as an OpenMP Runtime
-
-*A feasibility study in replacing libgomp with GHC RTS Capabilities*
-
 > **Note:** This is an experimental project. The claims and results have not been
 > thoroughly reviewed and should be considered tentative. The code, experiment design,
 > and execution were conducted with significant assistance from

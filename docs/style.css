@@ -138,10 +138,6 @@ li > ul, li > ol { margin: 0.15rem 0; }
   line-height: 2;
 }
 
-/* ── Hide duplicate h1 + subtitle in body ─────────── */
-.content > h1:first-child { display: none; }
-.content > h1:first-child + p { display: none; }
-
 /* ── Strong/emphasis ──────────────────────────────── */
 strong { font-weight: 650; }
 
