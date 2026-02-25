@@ -228,4 +228,4 @@ At batch=100, per-call overhead approaches unsafe FFI cost (~2 ns).
 
 ## License
 
-Experimental research project.
+BSD-3-Clause. See [LICENSE](LICENSE).
