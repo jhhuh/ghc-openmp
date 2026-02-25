@@ -1,4 +1,4 @@
-site_name: "GHC's Runtime System as an OpenMP Runtime"
+site_name: ghc-openmp
 site_url: https://jhhuh.github.io/ghc-openmp/
 repo_url: https://github.com/jhhuh/ghc-openmp
 repo_name: jhhuh/ghc-openmp
@@ -38,3 +38,4 @@ docs_dir: docs
 exclude_docs: |
   gen_charts.hs
   sections/
+  pages/

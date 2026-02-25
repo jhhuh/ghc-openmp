@@ -4,6 +4,8 @@ This section covers the integration between Haskell and the OpenMP runtime:
 calling conventions, initialization, concurrent execution, garbage collection
 behavior, and bidirectional callbacks.
 
+See also the [Haddock API reference](haddock/) for the `GHC.OpenMP` module.
+
 ### 6.1 FFI Calling Convention
 
 *Source: [`HsMain.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsMain.hs)*

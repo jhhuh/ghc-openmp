@@ -1,0 +1,59 @@
+site_name: ghc-openmp
+site_url: https://jhhuh.github.io/ghc-openmp/pages/
+repo_url: https://github.com/jhhuh/ghc-openmp
+repo_name: jhhuh/ghc-openmp
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.top
+    - navigation.sections
+    - toc.follow
+
+markdown_extensions:
+  - tables
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - toc:
+      permalink: true
+
+docs_dir: docs/pages
+
+nav:
+  - Home: index.md
+  - Abstract: abstract.md
+  - Motivation: motivation.md
+  - Background: background.md
+  - Architecture: architecture.md
+  - Optimization: optimization.md
+  - Haskell Integration: haskell-integration.md
+  - Low-Level Techniques: low-level.md
+  - Benchmarks: benchmarks.md
+  - Timeline: timeline.md
+  - Bugs & Fixes: bugs.md
+  - Limitations: limitations.md
+  - Related Work: related-work.md
+  - Conclusions: conclusions.md
+  - Appendices:
+    - ABI Surface: appendix-abi.md
+    - GOMP Primer: appendix-gomp.md
+    - NCG vs LLVM: appendix-ncg-llvm.md
+    - RTS Internals: appendix-rts.md
+    - Sense-Reversing Barrier: appendix-barrier.md

@@ -15,7 +15,7 @@ tier (see [Section 8.7](#87-calling-convention-overhead)).
 
 #### The Cmm Primitive
 
-```cmm
+```c
 #include "Cmm.h"
 
 omp_prim_cap_no(W_ dummy) {
@@ -67,7 +67,7 @@ across all N calls.
 
 #### The Batching Primitive
 
-```cmm
+```c
 #include "Cmm.h"
 
 cmm_batched_tid(W_ n) {

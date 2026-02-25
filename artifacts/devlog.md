@@ -244,3 +244,21 @@ Added `...` / `Cap N-1` ellipses to ASCII art (README.md) and Mermaid (index.md)
 ### Sense-reversing barrier appendix
 New `docs/sections/A5-barrier.md` explaining Mellor-Crummey & Scott barrier,
 `spin_barrier_t`, hybrid spin-wait, task-stealing variant.
+
+### Haddock API docs on GitHub Pages
+Used `haskellPackages.callCabal2nix` to build Haddock via nixpkgs infra. Output
+deployed at `/haddock/` alongside MkDocs site. Mutual links: module header links
+to main docs, frontmatter and Haskell integration section link to Haddock.
+
+### Multi-page docs variant
+Created `mkdocs-multi.yml` for multi-page MkDocs build. Each section is a separate
+page with promoted headings (`##` → `#`). Deployed at `/pages/`. Switcher links
+in frontmatter: single-page ↔ multi-page.
+
+Build refactored: substitutions (GIT_COMMIT, #FN: anchors) now run on section files
+first, then both single-page (concatenate) and multi-page (copy with heading
+promotion) are built from the same resolved sources.
+
+### Cmm syntax highlighting
+Changed ```` ```cmm ```` to ```` ```c ```` in `08-low-level.md` since Pygments
+doesn't have a Cmm lexer. C highlighting is close enough.

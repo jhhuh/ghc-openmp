@@ -45,6 +45,9 @@
           pp.mkdocs-material
         ]);
 
+        # Haskell package via nixpkgs infra (provides Haddock docs)
+        ghcOmpHaskellPkg = pkgs.haskellPackages.callCabal2nix "ghc-openmp" ./. {};
+
         docs = pkgs.stdenv.mkDerivation {
           pname = "ghc-openmp-docs";
           version = "0.18.0";
@@ -54,30 +57,75 @@
             export LANG=en_US.UTF-8
             export LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive
 
-            # Concatenate section files into single index.md
-            cat docs/sections/*.md > docs/index.md
-
+            # Generate benchmark charts
             ghc -O2 -tmpdir /tmp -hidir /tmp -odir /tmp -stubdir /tmp -o gen_charts docs/gen_charts.hs
             (cd docs && ../gen_charts)
             rm gen_charts
-            substituteInPlace docs/index.md --replace-quiet GIT_COMMIT "${self.rev or "main"}"
 
-            # Resolve #FN:function_name anchors to line ranges
-            for fn in $(grep -oE '#FN:[A-Za-z_0-9]+' docs/index.md | sed 's/#FN://' | sort -u); do
-              start=$(grep -n "''${fn}(" src/ghc_omp_runtime_rts.c | head -1 | cut -d: -f1)
-              if [ -z "$start" ]; then
-                echo "WARNING: no definition for ''${fn}" >&2; continue
-              fi
-              if sed -n "''${start}p" src/ghc_omp_runtime_rts.c | grep -q '{.*}'; then
-                anchor="#L''${start}"
-              else
-                end=$(awk -v s="$start" 'NR>s && /^\}/ {print NR; exit}' src/ghc_omp_runtime_rts.c)
-                anchor="#L''${start}-L''${end}"
-              fi
-              substituteInPlace docs/index.md --replace-quiet "#FN:''${fn}" "$anchor"
+            # Resolve substitutions on section files (shared by both builds)
+            resolve_fn_anchors() {
+              local file="$1"
+              for fn in $(grep -oE '#FN:[A-Za-z_0-9]+' "$file" | sed 's/#FN://' | sort -u); do
+                start=$(grep -n "''${fn}(" src/ghc_omp_runtime_rts.c | head -1 | cut -d: -f1)
+                if [ -z "$start" ]; then
+                  echo "WARNING: no definition for ''${fn}" >&2; continue
+                fi
+                if sed -n "''${start}p" src/ghc_omp_runtime_rts.c | grep -q '{.*}'; then
+                  anchor="#L''${start}"
+                else
+                  end=$(awk -v s="$start" 'NR>s && /^\}/ {print NR; exit}' src/ghc_omp_runtime_rts.c)
+                  anchor="#L''${start}-L''${end}"
+                fi
+                substituteInPlace "$file" --replace-quiet "#FN:''${fn}" "$anchor"
+              done
+            }
+
+            for f in docs/sections/*.md; do
+              substituteInPlace "$f" --replace-quiet GIT_COMMIT "${self.rev or "main"}"
+              resolve_fn_anchors "$f"
             done
 
+            # === Single-page build ===
+            cat docs/sections/*.md > docs/index.md
             mkdocs build -d _site
+
+            # === Multi-page build ===
+            mkdir -p docs/pages/charts
+            cp docs/charts/*.svg docs/pages/charts/ 2>/dev/null || true
+
+            # Map section files to page names with heading promotion
+            promote_headings() {
+              sed 's/^##### /#### /; s/^#### /### /; s/^### /## /; s/^## /# /'
+            }
+
+            # Frontmatter → index (keep # heading as-is, add single-page link)
+            sed 's|Multi-page view](pages/)|Single-page view](../)|' \
+              docs/sections/00-frontmatter.md > docs/pages/index.md
+            # Skip TOC (01-contents.md) — MkDocs sidebar handles navigation
+
+            promote_headings < docs/sections/02-abstract.md > docs/pages/abstract.md
+            promote_headings < docs/sections/03-motivation.md > docs/pages/motivation.md
+            promote_headings < docs/sections/04-background.md > docs/pages/background.md
+            promote_headings < docs/sections/05-architecture.md > docs/pages/architecture.md
+            promote_headings < docs/sections/06-optimization.md > docs/pages/optimization.md
+            promote_headings < docs/sections/07-haskell-integration.md > docs/pages/haskell-integration.md
+            promote_headings < docs/sections/08-low-level.md > docs/pages/low-level.md
+            promote_headings < docs/sections/09-benchmarks.md > docs/pages/benchmarks.md
+            promote_headings < docs/sections/10-timeline.md > docs/pages/timeline.md
+            promote_headings < docs/sections/11-bugs.md > docs/pages/bugs.md
+            promote_headings < docs/sections/12-limitations.md > docs/pages/limitations.md
+            promote_headings < docs/sections/13-related-work.md > docs/pages/related-work.md
+            promote_headings < docs/sections/14-conclusions.md > docs/pages/conclusions.md
+            promote_headings < docs/sections/A1-abi-surface.md > docs/pages/appendix-abi.md
+            promote_headings < docs/sections/A2-gomp-primer.md > docs/pages/appendix-gomp.md
+            promote_headings < docs/sections/A3-ncg-llvm.md > docs/pages/appendix-ncg-llvm.md
+            promote_headings < docs/sections/A4-rts-internals.md > docs/pages/appendix-rts.md
+            promote_headings < docs/sections/A5-barrier.md > docs/pages/appendix-barrier.md
+
+            mkdocs build -f mkdocs-multi.yml -d _site/pages
+
+            # Copy Haddock API docs from nixpkgs-built package
+            cp -r ${ghcOmpHaskellPkg.doc}/share/doc/ghc-openmp-*/html _site/haddock
           '';
           installPhase = ''
             cp -r _site $out
@@ -87,6 +135,7 @@
       {
         packages.default = ghc-openmp;
         packages.docs = docs;
+        packages.haskell = ghcOmpHaskellPkg;
 
         apps = {
           test-all = flake-utils.lib.mkApp {
