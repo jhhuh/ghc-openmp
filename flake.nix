@@ -56,6 +56,7 @@
             ghc -O2 -tmpdir /tmp -hidir /tmp -odir /tmp -stubdir /tmp -o gen_charts docs/gen_charts.hs
             (cd docs && ../gen_charts)
             rm gen_charts
+            substituteInPlace docs/index.md --replace-quiet GIT_COMMIT "${self.rev or "main"}"
             mkdocs build -d _site
           '';
           installPhase = ''

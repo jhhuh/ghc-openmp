@@ -89,6 +89,8 @@ auto-detects whether it is being hosted by a C program or a Haskell program.
 
 ### 3.2 The libgomp ABI
 
+*Source: [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/ghc_omp_runtime_rts.c)*
+
 GCC transforms OpenMP pragmas into calls to `GOMP_*` functions.
 For example:
 
@@ -109,6 +111,8 @@ A minimum viable runtime needs only 9 symbols (`GOMP_parallel`,
 symbols. Our implementation provides ~97.
 
 ### 3.3 Cmm and `foreign import prim`
+
+*Source: [`omp_prims.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_prims.cmm)*
 
 [Cmm](https://gitlab.haskell.org/ghc/ghc/-/wikis/commentary/compiler/cmm-type)
 (C minus minus) is GHC's low-level intermediate representation — a portable
@@ -137,6 +141,8 @@ embed Cmm code directly in Haskell modules via a `[cmm| ... |]` quasiquoter
 ---
 
 ## 4. Architecture
+
+*Source: [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/ghc_omp_runtime_rts.c)*
 
 <figure>
 <img src="charts/architecture.svg" alt="Runtime architecture diagram" />
@@ -188,6 +194,8 @@ thread. Full `omp_get_level()`, `omp_get_active_level()`,
 per-thread nesting state up to 8 levels deep.
 
 ### 4.3 Task Queues and Work Stealing
+
+*Source: [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/ghc_omp_runtime_rts.c), [`test_omp_tasks.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/test_omp_tasks.c)*
 
 OpenMP tasks (`#pragma omp task`) enable fork-join parallelism where one
 thread creates work items and other threads steal them. Our runtime supports
@@ -287,6 +295,8 @@ behavior, and bidirectional callbacks.
 
 ### 6.1 FFI Calling Convention
 
+*Source: [`HsMain.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsMain.hs)*
+
 Haskell calls OpenMP C code via `foreign import ccall safe`:
 
 ```haskell
@@ -314,6 +324,8 @@ and returns. The runtime discovers the existing Capabilities via
 
 ### 6.3 Concurrent Execution
 
+*Source: [`HsConcurrent.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsConcurrent.hs)*
+
 ```haskell
 -- Haskell green thread: pure computation
 _ <- forkIO $ do
@@ -332,6 +344,8 @@ Measured: sequential 68ms → concurrent 58ms, with 10ms of overlapping
 execution confirmed.
 
 ### 6.4 Garbage Collection Isolation
+
+*Source: [`HsGCStress.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsGCStress.hs)*
 
 A key concern: GHC's stop-the-world GC pauses all threads holding
 Capabilities. Would this stall OpenMP workers?
@@ -361,6 +375,8 @@ boundary.
 GHC RTS statistics: 99.7% productivity, GC time <0.5% of elapsed.
 
 ### 6.5 Bidirectional Callbacks
+
+*Source: [`HsCallback.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsCallback.hs), [`omp_compute.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_compute.c)*
 
 The previous sections demonstrated Haskell calling OpenMP. **OpenMP workers
 can also call back into Haskell** from within a parallel region.
@@ -445,6 +461,8 @@ zero-copy data passing, and linear types for safe mutable array partitioning.
 
 ### 7.1 Cmm Primitives
 
+*Source: [`omp_prims.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_prims.cmm), [`HsCmmDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsCmmDemo.hs)*
+
 GHC provides three calling conventions for foreign code, each with different
 overhead. We wrote a Cmm primitive that reads `Capability_no(MyCapability())`
 — the same value as `omp_get_thread_num()` — to measure the overhead of each
@@ -491,6 +509,8 @@ allocation, global Capability search, and lock acquisition. A Cmm-level fast
 path could potentially reduce this.
 
 ### 7.2 Batched Safe Calls
+
+*Source: [`omp_batch.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_batch.cmm), [`HsCmmBatch.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsCmmBatch.hs)*
 
 The safe FFI tax of ~68ns per call comes from `suspendThread()`/`resumeThread()`,
 which release and reacquire the Capability. For workloads that make many short
@@ -557,6 +577,8 @@ Benchmark results showing speedups up to 27x are in
 
 ### 7.3 Zero-Copy FFI with Pinned ByteArray
 
+*Source: [`HsZeroCopy.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsZeroCopy.hs)*
+
 The standard FFI pattern (`allocaArray` + `peekElemOff`/`pokeElemOff`) boxes
 every element as `CDouble` and converts via `realToFrac`, adding overhead at
 the Haskell↔OpenMP boundary:
@@ -586,6 +608,8 @@ ByteArray alive during the C call.
 Performance measurements are in [Section 8.9](#89-zero-copy-improvement).
 
 ### 7.4 Linear Typed Arrays
+
+*Source: [`Data/Array/Linear.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/Data/Array/Linear.hs), [`HsLinearDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsLinearDemo.hs)*
 
 GHC's `-XLinearTypes` extension can enforce exclusive ownership
 of mutable array regions at compile time. The design is inspired by
@@ -673,6 +697,8 @@ powersave governor. Best-of-N timing to reduce CPU frequency variance.
 
 ### 8.1 Microbenchmarks
 
+*Source: [`bench_overhead.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/bench_overhead.c)*
+
 #### Fork/Join Overhead (us/iter)
 
 | Threads | Native libgomp | RTS-backed | Ratio |
@@ -711,6 +737,8 @@ powersave governor. Best-of-N timing to reduce CPU frequency variance.
 
 ### 8.2 DGEMM
 
+*Source: [`bench_dgemm.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/bench_dgemm.c), [`omp_compute.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_compute.c)*
+
 Same naive triple-loop DGEMM compiled identically, linked against either
 native libgomp or our runtime. Checksums match exactly.
 
@@ -740,6 +768,8 @@ CPU frequency noise, not runtime overhead.
 
 ### 8.3 FFI Scaling
 
+*Source: [`HsMain.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsMain.hs)*
+
 Haskell calling parallel sinsum via safe FFI:
 
 | Threads | Time (ms) | Speedup |
@@ -753,6 +783,8 @@ Near-linear scaling through the FFI boundary, confirming the runtime
 correctly parallelizes work dispatched from Haskell.
 
 ### 8.4 Parallelism Crossover
+
+*Source: [`HsCrossover.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsCrossover.hs)*
 
 When does OpenMP from Haskell beat sequential C? We measured sinsum
 (compute-bound, ~11ns per element) at various sizes with 4 threads.
@@ -776,6 +808,8 @@ overhead is ~1.8us (86ns safe FFI + 1712ns OpenMP fork/join).
 
 ### 8.5 GHC Native Parallelism vs OpenMP
 
+*Source: [`HsParCompare.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsParCompare.hs)*
+
 For the same compute-bound sinsum workload, how does Haskell's `forkIO` with
 manual work splitting compare to OpenMP via safe FFI?
 
@@ -788,10 +822,18 @@ manual work splitting compare to OpenMP via safe FFI?
 
 OpenMP is consistently **~2x faster** than parallel Haskell. The gap comes
 entirely from per-element cost (C is 2.1x faster than Haskell for `sin()`
-due to SIMD vectorization and no boxing), not from parallelism overhead —
-both achieve near-ideal scaling on 4 threads.
+due to GCC's superior scalar code generation — instruction scheduling,
+register allocation, and built-in math function handling), not from
+parallelism overhead — both achieve near-ideal scaling on 4 threads.
+
+> **Note:** GHC `-O2` already fully unboxes the inner loop (`sinDouble#`,
+> `+##`, `*##` on `Double#`), and GCC does not vectorize `sin()` calls.
+> Neither boxing nor SIMD explains the gap — it is purely code generator
+> quality for scalar numeric code.
 
 ### 8.6 Task Execution
+
+*Source: [`HsTaskDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsTaskDemo.hs), [`test_omp_tasks.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/test_omp_tasks.c)*
 
 Deferred task execution with work-stealing barriers (4 threads, best of 5):
 
@@ -808,6 +850,8 @@ sequential reference with exact match.
 
 ### 8.7 Calling Convention Overhead
 
+*Source: [`HsCmmDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsCmmDemo.hs), [`omp_prims.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_prims.cmm)*
+
 | Convention | ns/call | Relative | Mechanism |
 |---|---|---|---|
 | `foreign import prim` (Cmm) | ~0 | — | Direct register read, GHC optimizes away |
@@ -819,6 +863,8 @@ sequential reference with exact match.
 </figure>
 
 ### 8.8 Batched Calls
+
+*Source: [`HsCmmBatch.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsCmmBatch.hs), [`omp_batch.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/omp_batch.cmm)*
 
 Amortizing the ~68ns safe FFI overhead by batching N C calls within a single
 `suspendThread`/`resumeThread` cycle:
@@ -842,6 +888,8 @@ closely at every batch size.
 </figure>
 
 ### 8.9 Zero-Copy Improvement
+
+*Source: [`HsZeroCopy.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/src/HsZeroCopy.hs)*
 
 Haskell sequential DGEMM inner loop, pinned ByteArray with unboxed primops
 vs standard boxed FFI:
