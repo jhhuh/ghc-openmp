@@ -1,6 +1,7 @@
 ---
 layout: default
 title: "GHC's Runtime System as an OpenMP Runtime"
+subtitle: "A feasibility study in replacing libgomp with GHC RTS Capabilities"
 ---
 
 # GHC's Runtime System as an OpenMP Runtime
