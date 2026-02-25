@@ -20,6 +20,8 @@
 12. [Related Work](#12-related-work)
 13. [Conclusions](#13-conclusions)
 14. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
+15. [Appendix: GOMP ABI Primer](#appendix-gomp-abi-primer)
+16. [Appendix: GHC RTS Internals](#appendix-ghc-rts-internals)
 
 ---
 
@@ -1108,6 +1110,235 @@ garbage collector.
 
 **omp_* User API:**
 `omp_get_num_threads`, `omp_get_thread_num`, `omp_get_max_threads`, `omp_get_num_procs`, `omp_set_num_threads`, `omp_in_parallel`, `omp_set_dynamic`, `omp_get_dynamic`, `omp_set_nested`, `omp_get_nested`, `omp_get_wtime`, `omp_get_wtick`, `omp_init_lock`, `omp_destroy_lock`, `omp_set_lock`, `omp_unset_lock`, `omp_test_lock`, `omp_init_nest_lock`, `omp_destroy_nest_lock`, `omp_set_nest_lock`, `omp_unset_nest_lock`, `omp_test_nest_lock`, `omp_get_level`, `omp_get_active_level`, `omp_get_ancestor_thread_num`, `omp_get_team_size`, `omp_get_thread_limit`, `omp_set_max_active_levels`, `omp_get_max_active_levels`, `omp_get_supported_active_levels`, `omp_set_schedule`, `omp_get_schedule`, `omp_in_final`, `omp_get_cancellation`, `omp_get_proc_bind`, `omp_get_num_places`, `omp_get_place_num`, `omp_get_default_device`, `omp_set_default_device`, `omp_get_num_devices`, `omp_get_num_teams`, `omp_get_team_num`, `omp_is_initial_device`, `omp_get_initial_device`, `omp_get_max_task_priority`
+
+---
+
+## Appendix: GOMP ABI Primer
+
+GCC does not interpret OpenMP pragmas at runtime. Instead, the compiler
+transforms each pragma into calls to `GOMP_*` functions at compile time.
+Any library that exports these symbols can serve as the OpenMP runtime.
+
+### Outlined Functions
+
+GCC extracts the body of a parallel region into a separate *outlined*
+function. The original code is replaced by a call to `GOMP_parallel`:
+
+```c
+// Source code:
+#pragma omp parallel
+{
+    do_work(shared_data);
+}
+
+// GCC transforms this to:
+static void outlined_fn(void *data) {
+    struct shared *d = data;
+    do_work(d->shared_data);
+}
+GOMP_parallel(outlined_fn, &shared_data, num_threads, flags);
+```
+
+`GOMP_parallel` calls `outlined_fn` on the master thread and dispatches
+it to worker threads. An implicit barrier at the end ensures all threads
+complete before the master returns.
+
+### Worksharing Loops
+
+`#pragma omp parallel for` combines a parallel region with work
+distribution. GCC transforms the loop into a protocol:
+
+```c
+// Source code:
+#pragma omp parallel for schedule(static)
+for (int i = 0; i < n; i++)
+    a[i] = compute(i);
+
+// Each thread executes:
+long start, end;
+if (GOMP_loop_static_start(0, n, 1, chunk, &start, &end)) {
+    do {
+        for (long i = start; i < end; i++)
+            a[i] = compute(i);
+    } while (GOMP_loop_static_next(&start, &end));
+}
+GOMP_loop_end();
+```
+
+The `_start` function assigns the first chunk to the calling thread.
+`_next` returns subsequent chunks until the iteration space is exhausted.
+`_end` synchronizes with an implicit barrier.
+
+For dynamic and guided scheduling, the same protocol applies with
+`GOMP_loop_dynamic_start/_next` or `GOMP_loop_guided_start/_next`.
+The runtime decides chunk sizes: static divides evenly, dynamic uses
+fixed chunks, guided uses exponentially decreasing chunks.
+
+### Reductions
+
+OpenMP reductions use thread-local accumulators combined at the barrier:
+
+```c
+// Source code:
+double sum = 0.0;
+#pragma omp parallel for reduction(+:sum)
+for (int i = 0; i < n; i++)
+    sum += a[i];
+
+// Each thread gets a local copy of sum (initialized to 0.0).
+// At the barrier, all local copies are combined with +.
+```
+
+GCC generates the local copies and the combining code. The runtime
+provides the barrier; the reduction logic is entirely compiler-generated.
+
+### Critical Sections and Atomics
+
+```c
+GOMP_critical_start();    // acquire global mutex
+  shared_counter++;
+GOMP_critical_end();      // release global mutex
+
+GOMP_critical_name_start(&named_lock);  // per-name mutex
+  named_resource++;
+GOMP_critical_name_end(&named_lock);
+```
+
+Unnamed critical sections share a single global mutex. Named critical
+sections use per-name mutexes, allowing independent critical regions
+to execute concurrently.
+
+### Tasks
+
+`GOMP_task` supports deferred execution:
+
+```c
+GOMP_task(fn, data, cpyfn, arg_size, arg_align, if_clause, flags, ...);
+```
+
+When `if_clause` is true and threads are available, the runtime copies
+the task data (via `cpyfn` or `memcpy`) to the heap and enqueues it.
+Idle threads steal tasks from other threads' queues. When `if_clause`
+is false, the task executes immediately (inlined). `GOMP_taskwait`
+blocks until all child tasks complete.
+
+---
+
+## Appendix: GHC RTS Internals
+
+The GHC Runtime System is the execution environment for compiled Haskell
+programs. This appendix covers the concepts needed to understand how
+our OpenMP runtime integrates with it.
+
+### Capabilities
+
+A **Capability** is GHC's fundamental execution unit. Each Capability
+consists of:
+
+- One OS thread (the *owner*)
+- One run queue of lightweight Haskell threads (TSOs)
+- One spark pool for speculative parallelism (`par`)
+- A private allocation area for the generational GC
+
+The number of Capabilities is set by `+RTS -N4` (4 Capabilities).
+Each has a 0-indexed number (`cap->no`) that we map directly to
+`omp_get_thread_num()`.
+
+### TSOs (Thread State Objects)
+
+A **TSO** represents a lightweight Haskell thread — what `forkIO`
+creates. TSOs are much cheaper than OS threads (~1KB vs ~8MB stack).
+Thousands of TSOs can be multiplexed onto a single Capability. The
+Capability's scheduler picks TSOs from the run queue and executes them
+in round-robin fashion, yielding on allocation (every ~4KB allocated).
+
+### Scheduler Loop
+
+Each Capability runs a loop:
+
+```
+loop:
+  tso = pick from run queue (or steal a spark)
+  run tso until it yields/blocks/finishes
+  if tso blocked: move to blocked queue
+  if tso yielded: put back on run queue
+  goto loop
+```
+
+When a Capability has no work, it can steal sparks from other
+Capabilities or go idle. This is the same work-stealing mechanism
+that our OpenMP task implementation builds on.
+
+### RTS API for Embedding
+
+These functions allow C code to interact with the RTS:
+
+| Function | Purpose |
+|---|---|
+| `hs_init_ghc(&argc, &argv, conf)` | Boot the RTS. Reference-counted: safe to call when already running. |
+| `rts_lock()` | Acquire a Capability. Returns `Capability*`. Blocks until one is available. |
+| `rts_unlock(cap)` | Release a Capability. Makes it available for Haskell threads or other callers. |
+| `rts_setInCallCapability(i, 1)` | Pin the calling OS thread to Capability `i`. Subsequent `rts_lock()` calls will always get Capability `i`. |
+| `getNumCapabilities()` | Return the current number of Capabilities. |
+| `getNumberOfProcessors()` | Return the CPU count. |
+
+Our runtime uses these to create workers pinned to specific Capabilities.
+After the initial `rts_lock()/rts_unlock()` registration, workers release
+their Capabilities and become plain OS threads.
+
+### Safe vs Unsafe FFI
+
+GHC provides two FFI calling conventions with different trade-offs:
+
+**Unsafe** (`foreign import ccall unsafe`): The Haskell thread keeps
+holding its Capability during the C call. Fast (~2ns overhead), but
+blocks all other Haskell threads on that Capability. Suitable for
+short, non-blocking C functions.
+
+**Safe** (`foreign import ccall safe`): The Haskell thread releases
+its Capability before calling C, and reacquires it on return. Slower
+(~68ns overhead) but allows other Haskell threads to run. Required for
+C functions that may block or run for a long time.
+
+Internally, safe FFI calls `suspendThread()` (release Capability, return
+a token) before the C function, and `resumeThread(token)` (reacquire
+Capability) after. This is the mechanism our batched calls exploit
+([Section 7.2](#72-batched-safe-calls)).
+
+### Garbage Collection
+
+GHC uses a **stop-the-world** generational garbage collector. When a
+GC is triggered:
+
+1. All Capabilities are synchronized (each thread reaches a safe point)
+2. GC runs, scanning all Capability-local allocation areas
+3. Capabilities are released and threads resume
+
+Critically, GC only synchronizes threads that *hold* Capabilities.
+Our OpenMP workers do not hold Capabilities during parallel execution —
+they are invisible to the GC. This is why OpenMP compute kernels are
+not paused by Haskell garbage collection ([Section 6.4](#64-garbage-collection-isolation)).
+
+### STG Machine Registers
+
+GHC compiles Haskell to STG (Spineless Tagless G-machine) code, which
+uses a set of virtual registers mapped to hardware registers:
+
+| Register | x86-64 | Purpose |
+|---|---|---|
+| BaseReg | `%r13` | Pointer to current Capability |
+| Sp | `%rbp` | STG stack pointer |
+| Hp | `%r12` | Heap allocation pointer |
+| R1 | `%rbx` | First argument / return value |
+| R2-R6 | `%r14`, `%rsi`, `%rdi`, `%r8`, `%r9` | Arguments |
+| SpLim | `%r15` | Stack limit |
+
+These registers are caller-saved with respect to C calls. Every
+`foreign import ccall` must save them before and restore them after the
+C function. This is the source of the NCG overhead analyzed in
+[Section 8.5](#85-ghc-native-parallelism-vs-openmp): the NCG saves/restores
+these registers inside the loop, while the LLVM backend hoists them
+outside.
 
 ---
 
