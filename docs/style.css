@@ -9,7 +9,8 @@ a:hover { text-decoration: underline; }
 code { font-family: var(--font-mono); font-size: 0.88em; background: var(--color-bg-code); padding: 0.15em 0.35em; border-radius: 3px; }
 pre { background: var(--color-bg-code); border: 1px solid var(--color-border); border-radius: 6px; padding: 1rem; overflow-x: auto; line-height: 1.5; }
 pre code { background: none; padding: 0; }
-pre.mermaid { background: none; border: none; padding: 0; text-align: center; }
+figure { text-align: center; margin: 1.5rem 0; }
+figure img { display: inline-block; }
 table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.92em; }
 th, td { border: 1px solid var(--color-border); padding: 0.5rem 0.75rem; text-align: left; }
 th { background: var(--color-bg-code); font-weight: 600; }

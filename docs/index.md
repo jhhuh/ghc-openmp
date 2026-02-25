@@ -148,42 +148,9 @@ embed Cmm code directly in Haskell modules via a `[cmm| ... |]` quasiquoter
 
 ## 4. Architecture
 
-<pre class="mermaid">
-flowchart TD
-    subgraph Host["Host Program"]
-        direction LR
-        HS["Haskell program<br/>(ghc -threaded)"]
-        CP["C program<br/>(gcc -fopenmp)"]
-    end
-
-    HS -->|"foreign import<br/>ccall safe"| RT
-    CP -->|"calls<br/>GOMP_parallel()"| RT
-
-    subgraph RT["ghc_omp_runtime_rts.c"]
-        subgraph r1[" "]
-            direction LR
-            E["1. ensure_rts()"] --> D["2. Store fn/data"] --> W["3. Wake workers"]
-        end
-        subgraph r2[" "]
-            direction LR
-            EB["6. End barrier"] ~~~ FN["5. fn(data)"] ~~~ SB["4. Start barrier"]
-        end
-        W --> SB --> FN --> EB
-    end
-
-    RT --> RTS
-
-    subgraph RTS["GHC Runtime System"]
-        direction LR
-        C0["Cap 0<br/>(master)"] ~~~ C1["Cap 1<br/>(worker)"] ~~~ C2["Cap 2<br/>(worker)"] ~~~ C3["Cap 3<br/>(worker)"]
-    end
-
-    style Host fill:#f8fafc,stroke:#94a3b8,stroke-width:2px
-    style RT fill:#ecfdf5,stroke:#059669,stroke-width:2px
-    style RTS fill:#eff6ff,stroke:#2563eb,stroke-width:2px
-    style r1 fill:none,stroke:none
-    style r2 fill:none,stroke:none
-</pre>
+<figure>
+<img src="charts/architecture.svg" alt="Runtime architecture diagram" />
+</figure>
 
 *Figure 1: Runtime architecture. Workers are plain OS threads pinned to
 GHC Capabilities. After `rts_lock()`/`rts_unlock()` init, they do NOT
@@ -316,16 +283,9 @@ is optimal for small team sizes (typical OpenMP use).
 After optimization, the RTS-backed runtime **matches or beats**
 native libgomp on all benchmarks.
 
-<pre class="mermaid">
-%%{init: {'theme':'neutral','themeVariables':{'xyChart':{'plotColorPalette':'#ef4444,#059669,#64748b'}}}}%%
-xychart-beta horizontal
-  title "Optimization Journey: Phase 2 → Phase 3 (4 threads, us)"
-  x-axis ["Fork/join", "Barrier"]
-  y-axis "Latency (us)" 0 --> 25
-  bar "Phase 2 (mutex+condvar)" [24.35, 7.01]
-  bar "Phase 3 (lock-free)" [0.81, 0.25]
-  bar "Native libgomp" [0.97, 0.51]
-</pre>
+<figure>
+<img src="charts/optimization-journey.svg" alt="Optimization Journey: Phase 2 → Phase 3" />
+</figure>
 
 ---
 
@@ -776,15 +736,9 @@ native libgomp or our runtime. Checksums match exactly.
 Interleaved re-runs confirm the two runtimes trade leads: the difference is
 CPU frequency noise, not runtime overhead.
 
-<pre class="mermaid">
-%%{init: {'theme':'neutral','themeVariables':{'xyChart':{'plotColorPalette':'#64748b,#2563eb'}}}}%%
-xychart-beta
-  title "DGEMM Head-to-Head: Native libgomp vs RTS (4 threads, ms)"
-  x-axis "Matrix size" ["N=128", "N=256", "N=512", "N=1024"]
-  y-axis "Time (ms)" 0 --> 800
-  bar "Native libgomp" [0.86, 12.62, 77.51, 748.83]
-  bar "RTS-backed" [0.94, 12.28, 76.96, 663.37]
-</pre>
+<figure>
+<img src="charts/dgemm-comparison.svg" alt="DGEMM Head-to-Head: Native libgomp vs RTS" />
+</figure>
 
 #### Scaling (RTS-backed, DGEMM 1024x1024)
 
@@ -826,15 +780,9 @@ The crossover is at **~500 elements** — above this, OpenMP parallel execution
 from Haskell is faster than sequential C called via unsafe FFI. The fixed
 overhead is ~1.8us (86ns safe FFI + 1712ns OpenMP fork/join).
 
-<pre class="mermaid">
-%%{init: {'theme':'neutral','themeVariables':{'xyChart':{'plotColorPalette':'#d97706,#2563eb'}}}}%%
-xychart-beta
-  title "Parallelism Crossover: Sequential vs Parallel (4 threads)"
-  x-axis "Elements" ["100", "200", "500", "1K", "5K", "100K"]
-  y-axis "Time (us)" 0 --> 1200
-  line "Sequential C (unsafe FFI)" [0.5, 1.3, 3.6, 7.5, 49.0, 1132]
-  line "Parallel OpenMP (safe FFI)" [2.1, 2.2, 2.9, 3.9, 16.6, 279]
-</pre>
+<figure>
+<img src="charts/crossover.svg" alt="Parallelism Crossover: Sequential vs Parallel" />
+</figure>
 
 ### 8.5 GHC Native Parallelism vs OpenMP
 
@@ -876,14 +824,9 @@ sequential reference with exact match.
 | `foreign import ccall unsafe` | 2.3 | — | Save/restore STG registers |
 | `foreign import ccall safe` | 67.5 | 29x vs unsafe | + suspendThread/resumeThread |
 
-<pre class="mermaid">
-%%{init: {'theme':'neutral','themeVariables':{'xyChart':{'plotColorPalette':'#2563eb'}}}}%%
-xychart-beta
-  title "FFI Calling Convention Overhead (ns/call)"
-  x-axis ["prim (Cmm)", "ccall unsafe", "ccall safe"]
-  y-axis "Latency (ns)" 0 --> 70
-  bar [0.1, 2.3, 67.5]
-</pre>
+<figure>
+<img src="charts/ffi-overhead.svg" alt="FFI Calling Convention Overhead" />
+</figure>
 
 ### 8.8 Batched Calls
 
@@ -904,15 +847,9 @@ At batch=100, per-call overhead drops to 2.7 ns — within 35% of unsafe FFI
 cost (~2 ns). The results match the theoretical prediction `(68 + N × 2) / N`
 closely at every batch size.
 
-<pre class="mermaid">
-%%{init: {'theme':'neutral','themeVariables':{'xyChart':{'plotColorPalette':'#059669,#94a3b8'}}}}%%
-xychart-beta
-  title "Batched Safe Calls: Per-Call Overhead (ns)"
-  x-axis "Batch size" ["1", "2", "5", "10", "20", "50", "100"]
-  y-axis "ns/call" 0 --> 75
-  line "Cmm batched" [69.1, 36.1, 15.2, 8.7, 5.3, 3.4, 2.7]
-  line "Standard safe" [72.4, 71.3, 73.0, 71.0, 71.1, 71.7, 71.4]
-</pre>
+<figure>
+<img src="charts/batched-calls.svg" alt="Batched Safe Calls: Per-Call Overhead" />
+</figure>
 
 ### 8.9 Zero-Copy Improvement
 

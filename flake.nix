@@ -35,7 +35,11 @@
         # Helper to make a runner script
         mkRunner = name: script: pkgs.writeShellScriptBin name script;
 
-        ghcWithHakyll = pkgs.haskellPackages.ghcWithPackages (p: [ p.hakyll ]);
+        ghcWithHakyll = pkgs.haskellPackages.ghcWithPackages (p: [
+          p.hakyll
+          p.Chart
+          p.Chart-diagrams
+        ]);
 
         docs = pkgs.stdenv.mkDerivation {
           pname = "ghc-openmp-docs";
