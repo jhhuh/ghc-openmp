@@ -52,13 +52,17 @@ run_bench() {
 run_all_benchmarks() {
     local p="$BINDIR"
 
-    # C microbenchmarks
-    run_bench "bench_overhead_native" "OMP_NUM_THREADS=$THREADS $p/bench_native"
-    run_bench "bench_overhead_rts"    "OMP_NUM_THREADS=$THREADS $p/bench_rts"
+    # C microbenchmarks at multiple thread counts
+    for t in 1 2 4 8; do
+        run_bench "bench_overhead_native_${t}t" "OMP_NUM_THREADS=$t $p/bench_native"
+        run_bench "bench_overhead_rts_${t}t"    "OMP_NUM_THREADS=$t $p/bench_rts"
+    done
 
-    # DGEMM (4 threads only for the standard result)
-    run_bench "bench_dgemm_native" "OMP_NUM_THREADS=$THREADS $p/bench_dgemm_native"
-    run_bench "bench_dgemm_rts"    "OMP_NUM_THREADS=$THREADS $p/bench_dgemm_rts"
+    # DGEMM at multiple thread counts (1-4, matching scaling table)
+    for t in 1 2 4; do
+        run_bench "bench_dgemm_native_${t}t" "OMP_NUM_THREADS=$t $p/bench_dgemm_native"
+        run_bench "bench_dgemm_rts_${t}t"    "OMP_NUM_THREADS=$t $p/bench_dgemm_rts"
+    done
 
     # Haskell benchmarks
     run_bench "par_compare"  "$p/par_compare +RTS -N$THREADS"
@@ -196,16 +200,46 @@ parse_task_tests() {
 build_json() {
     {
         echo "{"
+        # Default 4-thread overhead (backward compat)
         echo '  "overhead": {'
-        parse_overhead "$LOGDIR/bench_overhead_native.log" "native"
+        parse_overhead "$LOGDIR/bench_overhead_native_4t.log" "native"
         echo ","
-        parse_overhead "$LOGDIR/bench_overhead_rts.log" "rts"
+        parse_overhead "$LOGDIR/bench_overhead_rts_4t.log" "rts"
         echo ""
         echo "  },"
+        # Multi-thread overhead
+        echo '  "overhead_by_threads": {'
+        local first_t=true
+        for t in 1 2 4 8; do
+            [ -f "$LOGDIR/bench_overhead_native_${t}t.log" ] || continue
+            if [ "$first_t" = true ]; then first_t=false; else echo ","; fi
+            echo "    \"${t}\": {"
+            parse_overhead "$LOGDIR/bench_overhead_native_${t}t.log" "native"
+            echo ","
+            parse_overhead "$LOGDIR/bench_overhead_rts_${t}t.log" "rts"
+            echo "    }"
+        done
+        echo ""
+        echo "  },"
+        # Default 4-thread DGEMM (backward compat)
         echo '  "dgemm": {'
-        parse_dgemm "$LOGDIR/bench_dgemm_native.log" "native"
+        parse_dgemm "$LOGDIR/bench_dgemm_native_4t.log" "native"
         echo ","
-        parse_dgemm "$LOGDIR/bench_dgemm_rts.log" "rts"
+        parse_dgemm "$LOGDIR/bench_dgemm_rts_4t.log" "rts"
+        echo ""
+        echo "  },"
+        # Multi-thread DGEMM
+        echo '  "dgemm_by_threads": {'
+        local first_d=true
+        for t in 1 2 4; do
+            [ -f "$LOGDIR/bench_dgemm_native_${t}t.log" ] || continue
+            if [ "$first_d" = true ]; then first_d=false; else echo ","; fi
+            echo "    \"${t}\": {"
+            parse_dgemm "$LOGDIR/bench_dgemm_native_${t}t.log" "native"
+            echo ","
+            parse_dgemm "$LOGDIR/bench_dgemm_rts_${t}t.log" "rts"
+            echo "    }"
+        done
         echo ""
         echo "  },"
         parse_par_compare
@@ -252,16 +286,16 @@ generate_summary() {
 
         # Read values from log files directly (simpler than JSON parsing in bash)
         local n_fj r_fj n_bar r_bar n_pf r_pf n_cr r_cr n_tk r_tk
-        n_fj=$(extract_float "$LOGDIR/bench_overhead_native.log" "Fork/join")
-        r_fj=$(extract_float "$LOGDIR/bench_overhead_rts.log" "Fork/join")
-        n_bar=$(extract_float "$LOGDIR/bench_overhead_native.log" "Barrier")
-        r_bar=$(extract_float "$LOGDIR/bench_overhead_rts.log" "Barrier")
-        n_pf=$(extract_float "$LOGDIR/bench_overhead_native.log" "Parallel for")
-        r_pf=$(extract_float "$LOGDIR/bench_overhead_rts.log" "Parallel for")
-        n_cr=$(extract_float "$LOGDIR/bench_overhead_native.log" "Critical")
-        r_cr=$(extract_float "$LOGDIR/bench_overhead_rts.log" "Critical")
-        n_tk=$(extract_float "$LOGDIR/bench_overhead_native.log" "Tasks")
-        r_tk=$(extract_float "$LOGDIR/bench_overhead_rts.log" "Tasks")
+        n_fj=$(extract_float "$LOGDIR/bench_overhead_native_4t.log" "Fork/join")
+        r_fj=$(extract_float "$LOGDIR/bench_overhead_rts_4t.log" "Fork/join")
+        n_bar=$(extract_float "$LOGDIR/bench_overhead_native_4t.log" "Barrier")
+        r_bar=$(extract_float "$LOGDIR/bench_overhead_rts_4t.log" "Barrier")
+        n_pf=$(extract_float "$LOGDIR/bench_overhead_native_4t.log" "Parallel for")
+        r_pf=$(extract_float "$LOGDIR/bench_overhead_rts_4t.log" "Parallel for")
+        n_cr=$(extract_float "$LOGDIR/bench_overhead_native_4t.log" "Critical")
+        r_cr=$(extract_float "$LOGDIR/bench_overhead_rts_4t.log" "Critical")
+        n_tk=$(extract_float "$LOGDIR/bench_overhead_native_4t.log" "Tasks")
+        r_tk=$(extract_float "$LOGDIR/bench_overhead_rts_4t.log" "Tasks")
 
         printf "| Fork/join | %s us | %s us | %sx |\n" "$n_fj" "$r_fj" "$(awk "BEGIN{printf \"%.2f\", $r_fj / $n_fj}")"
         printf "| Barrier | %s us | %s us | %sx |\n" "$n_bar" "$r_bar" "$(awk "BEGIN{printf \"%.2f\", $r_bar / $n_bar}")"
@@ -276,8 +310,8 @@ generate_summary() {
         echo ""
         echo "| N | Native (ms) | RTS (ms) | Ratio |"
         echo "|---|------------|---------|-------|"
-        paste <(grep -E '^\s*[0-9]+\s+[0-9]' "$LOGDIR/bench_dgemm_native.log") \
-              <(grep -E '^\s*[0-9]+\s+[0-9]' "$LOGDIR/bench_dgemm_rts.log") | \
+        paste <(grep -E '^\s*[0-9]+\s+[0-9]' "$LOGDIR/bench_dgemm_native_4t.log") \
+              <(grep -E '^\s*[0-9]+\s+[0-9]' "$LOGDIR/bench_dgemm_rts_4t.log") | \
         while read -r n1 t1 g1 c1 n2 t2 g2 c2; do
             local ratio=$(awk "BEGIN{printf \"%.2f\", $t2 / $t1}")
             printf "| %s | %s | %s | %sx |\n" "$n1" "$t1" "$t2" "$ratio"
@@ -325,7 +359,7 @@ echo "Collecting system info..."
 collect_sysinfo
 
 echo ""
-echo "Running benchmarks (OMP_NUM_THREADS=$THREADS)..."
+echo "Running benchmarks (threads: 1,2,4,8 for overhead; 1,2,4 for DGEMM; $THREADS for Haskell)..."
 run_all_benchmarks
 
 echo ""
@@ -337,9 +371,15 @@ echo "Generating summary..."
 generate_summary
 
 echo ""
+echo "Updating README and docs tables..."
+SCRIPTDIR="$(cd "$(dirname "$0")" && pwd)"
+"$SCRIPTDIR/update_bench_tables.sh" "$OUTDIR"
+
+echo ""
 echo "=== Done ==="
 echo "Results in: $OUTDIR/"
 echo "  system_info.json  - System configuration"
 echo "  results.json      - Parsed benchmark data"
 echo "  summary.md        - Markdown tables for docs"
 echo "  logs/             - Raw benchmark output"
+echo "  README.md and docs/sections/09-benchmarks.md updated"

@@ -193,19 +193,23 @@ lib/
 
 ### Microbenchmarks
 
+<!-- BENCH:readme_micro -->
 | Metric | Native libgomp | RTS-backed | Ratio |
 |--------|---------------|------------|-------|
-| Fork/join | 0.97 us | 0.81 us | **0.83x** (RTS faster) |
-| Barrier | 0.51 us | 0.25 us | **0.50x** (RTS faster) |
-| Parallel for (1M sin) | 3.85 ms | 3.91 ms | 1.01x (parity) |
-| Critical section | 0.92 ms | 0.38 ms | **0.42x** (RTS faster) |
+| Fork/join | 0.700 us | 0.601 us | **0.86x** (RTS faster) |
+| Barrier | 0.186 us | 0.181 us | 0.97x (parity) |
+| Parallel for (1M sin) | 2.881 ms | 3.226 ms | 1.12x |
+| Critical section | 0.248 ms | 0.326 ms | 1.31x |
+<!-- /BENCH:readme_micro -->
 
 ### DGEMM (dense matrix multiply)
 
+<!-- BENCH:readme_dgemm -->
 | N | Native (ms) | RTS (ms) | Ratio |
 |---|------------|---------|-------|
-| 512 | 77.5 | 77.0 | 0.99x |
-| 1024 | 748.8 | 663.4 | 0.89x |
+| 512 | 66.11 | 68.05 | 1.03x |
+| 1024 | 603.84 | 536.88 | 0.89x |
+<!-- /BENCH:readme_dgemm -->
 
 Performance is indistinguishable within measurement noise.
 
