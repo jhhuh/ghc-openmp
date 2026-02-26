@@ -35,6 +35,12 @@ foreign import ccall safe "transform_range"
 foreign import ccall safe "transform_range_barrier"
     c_transform_range_barrier :: Ptr CDouble -> Ptr CDouble -> CInt -> CInt -> IO ()
 
+foreign import ccall safe "transform_partitioned_barrier"
+    c_partitioned_barrier :: Ptr CDouble -> Ptr CDouble -> CInt -> CInt -> CInt -> IO ()
+
+foreign import ccall safe "transform_partitioned_nobarrier"
+    c_partitioned_nobarrier :: Ptr CDouble -> Ptr CDouble -> CInt -> CInt -> CInt -> IO ()
+
 foreign import ccall safe "get_omp_num_threads"
     c_get_omp_num_threads :: IO CInt
 
@@ -122,32 +128,17 @@ benchWithoutBarrier arrIn arrOut n iters = do
     return (t1 - t0)
 
 ------------------------------------------------------------------------
--- Benchmark: scaling by partition count
+-- Benchmark: scaling by partition count (real barriers)
 ------------------------------------------------------------------------
 
--- | Split array into P chunks, each needing its own barrier.
--- Alternates: Haskell chunk, C chunk, Haskell chunk, C chunk, ...
-benchPartitions :: PinnedDoubles -> PinnedDoubles -> Int -> Int -> Bool -> IO Double
-benchPartitions arrIn arrOut n parts useBarrier = do
-    let chunkSize = n `div` parts
+-- | Process N elements in P partitions using C/OpenMP, with or without
+-- real barriers inside a single parallel region.
+benchCPartitions :: PinnedDoubles -> PinnedDoubles -> Int -> Int -> Int -> Bool -> IO Double
+benchCPartitions arrIn arrOut n parts iters useBarrier = do
     t0 <- nowMs
-    let go _ 0 = return ()
-        go off p = do
-            let len = if p == 1 then n - off else chunkSize
-            if even p
-              then do
-                -- Haskell chunk
-                hsTransformRange arrIn arrOut off len
-              else do
-                -- C/OpenMP chunk
-                if useBarrier
-                  then c_transform_range_barrier (ptrOf arrIn) (ptrOf arrOut)
-                           (fromIntegral off) (fromIntegral len)
-                  else c_transform_range (ptrOf arrIn) (ptrOf arrOut)
-                           (fromIntegral off) (fromIntegral len)
-                touch arrIn; touch arrOut
-            go (off + len) (p - 1)
-    go 0 parts
+    let call = if useBarrier then c_partitioned_barrier else c_partitioned_nobarrier
+    call (ptrOf arrIn) (ptrOf arrOut) (fromIntegral n) (fromIntegral parts) (fromIntegral iters)
+    touch arrIn; touch arrOut
     t1 <- nowMs
     return (t1 - t0)
 
@@ -236,38 +227,40 @@ main = do
             n msBarrier msNoBarrier overhead pct
     putStrLn ""
 
-    -- Benchmark 2: scaling by partition count
-    putStrLn "--- Benchmark 2: Scaling by partition count (N=1000000) ---"
-    putStrLn "    More partitions = more barriers needed"
+    -- Benchmark 2: barrier scaling with real barriers inside parallel region
+    putStrLn "--- Benchmark 2: Barrier overhead scaling (N=100000, 10 iters) ---"
+    putStrLn "    Real barriers inside #pragma omp parallel region"
+    putStrLn "    More partitions = more barriers = more overhead"
     putStrLn ""
-    let n2 = 1000000
+    let n2 = 100000
+        iters2 = 10
     arrIn2  <- newPinnedDoubles n2
     arrOut2 <- newPinnedDoubles n2
     forM_ [0..n2-1] $ \i -> writeD arrIn2 i (fromIntegral i * 0.001)
 
     -- Warmup
-    _ <- benchPartitions arrIn2 arrOut2 n2 2 True
-    _ <- benchPartitions arrIn2 arrOut2 n2 2 False
+    _ <- benchCPartitions arrIn2 arrOut2 n2 2 iters2 True
+    _ <- benchCPartitions arrIn2 arrOut2 n2 2 iters2 False
 
     printf "  %-12s  %12s  %12s  %10s\n"
         ("Partitions" :: String) ("With barrier" :: String)
         ("No barrier" :: String) ("Overhead" :: String)
 
-    forM_ [2, 4, 8, 16, 32] $ \p -> do
+    forM_ [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] $ \p -> do
         -- Best of 5
-        bTimes <- mapM (\_ -> benchPartitions arrIn2 arrOut2 n2 p True)  [1..5 :: Int]
-        nTimes <- mapM (\_ -> benchPartitions arrIn2 arrOut2 n2 p False) [1..5 :: Int]
+        bTimes <- mapM (\_ -> benchCPartitions arrIn2 arrOut2 n2 p iters2 True)  [1..5 :: Int]
+        nTimes <- mapM (\_ -> benchCPartitions arrIn2 arrOut2 n2 p iters2 False) [1..5 :: Int]
         let msB = minimum bTimes
             msN = minimum nTimes
             overhead = msB - msN
-        printf "  %-12d  %9.3f ms  %9.3f ms  %+.3f ms\n"
-            p msB msN overhead
+            pct = if msN > 0 then overhead / msN * 100 else 0
+        printf "  %-12d  %9.3f ms  %9.3f ms  %+.3f ms (%+.1f%%)\n"
+            p msB msN overhead pct
     putStrLn ""
 
     putStrLn "--- Summary ---"
-    putStrLn "  Without compile-time proof of disjointness, correct programs"
-    putStrLn "  must include barriers for memory visibility."
-    putStrLn "  Barrier cost accumulates with iterations and partition count."
-    putStrLn "  Demo 3 eliminates this with linear types."
+    putStrLn "  Real barriers inside a parallel region scale linearly with P."
+    putStrLn "  At P=1024, barrier overhead is substantial."
+    putStrLn "  Demo 3 shows linear types eliminate this entirely."
     putStrLn ""
     putStrLn "=== Done ==="

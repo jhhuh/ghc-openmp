@@ -365,7 +365,19 @@ demo-shared3: build/shared3_demo
 	@echo "=== Shared Memory Demo 3: Linear ==="
 	build/shared3_demo +RTS -N4
 
-demo-shared: demo-shared1 demo-shared2 demo-shared3
+build/shared4_demo: demos/HsSharedMem4.hs demos/Data/Array/Linear.hs build/omp_shared.o build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		demos/HsSharedMem4.hs demos/Data/Array/Linear.hs build/omp_shared.o build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-idemos \
+		-outputdir build/hs_shared4_out
+
+demo-shared4: build/shared4_demo
+	@echo "=== Shared Memory Demo 4: Safety ==="
+	build/shared4_demo +RTS -N4
+
+demo-shared: demo-shared1 demo-shared2 demo-shared3 demo-shared4
 
 # ---- Benchmarks ----
 
@@ -433,7 +445,7 @@ BUILD_ALL_BINS = \
 	build/cmm_demo build/cmm_batch \
 	build/crossover build/par_compare build/task_demo \
 	build/zerocopy_demo build/linear_demo \
-	build/shared1_demo build/shared2_demo build/shared3_demo \
+	build/shared1_demo build/shared2_demo build/shared3_demo build/shared4_demo \
 	build/bench_native build/bench_rts \
 	build/bench_dgemm_native build/bench_dgemm_rts
 
