@@ -11,7 +11,7 @@ zero-overhead Cmm primitives and batched FFI calls.
 GHC provides three calling conventions for foreign code, each with different
 overhead. We wrote a Cmm primitive that reads `Capability_no(MyCapability())`
 — the same value as `omp_get_thread_num()` — to measure the overhead of each
-tier (see [Section 8.7](#87-calling-convention-overhead)).
+tier (see [Section 9.7](#97-calling-convention-overhead)).
 
 #### The Cmm Primitive
 
@@ -118,7 +118,7 @@ Three details were critical for correctness:
    (State# is erased at the Cmm level).
 
 Benchmark results showing speedups up to 27x are in
-[Section 8.8](#88-batched-calls).
+[Section 9.8](#98-batched-calls).
 
 ---
 

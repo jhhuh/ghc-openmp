@@ -1,4 +1,4 @@
-## 10. Notable Bugs and Fixes
+## 11. Notable Bugs and Fixes
 
 ### 10.1 Barrier Sense Mismatch Deadlock
 

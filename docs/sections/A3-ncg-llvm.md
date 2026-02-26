@@ -2,7 +2,7 @@
 
 This appendix details why GHC's default native code generator (NCG) produces
 a ~2x slower inner loop than GCC for `sin()`-heavy workloads, and how the
-LLVM backend eliminates the gap. See [Section 8.5](#85-ghc-native-parallelism-vs-openmp)
+LLVM backend eliminates the gap. See [Section 9.5](#95-ghc-native-parallelism-vs-openmp)
 for the benchmark results.
 
 ### What the Haskell code compiles to

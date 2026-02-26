@@ -63,7 +63,7 @@ native libgomp on all benchmarks.
 With parity established, the runtime becomes a platform. The following
 sections build the capabilities — FFI integration, GC isolation,
 zero-copy sharing, linear types — that culminate in Haskell and OpenMP
-collaborating on shared data structures (§15).
+collaborating on shared data structures (§8).
 
 ---
 

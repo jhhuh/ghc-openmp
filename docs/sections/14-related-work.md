@@ -1,4 +1,4 @@
-## 12. Related Work
+## 13. Related Work
 
 **BOLT** ([bolt-omp.org](https://www.bolt-omp.org/), Best Paper PACT '19) is
 the closest analogue to this project. BOLT is a full OpenMP runtime built on

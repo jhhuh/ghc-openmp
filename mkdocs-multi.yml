@@ -45,6 +45,7 @@ nav:
   - Optimization: optimization.md
   - Haskell Integration: haskell-integration.md
   - Low-Level Techniques: low-level.md
+  - Shared Memory Demos: shared-memory.md
   - Benchmarks: benchmarks.md
   - Timeline: timeline.md
   - Bugs & Fixes: bugs.md

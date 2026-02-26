@@ -77,7 +77,7 @@ with an atomic pending counter for fast-path bypass:
   variant, since GCC may omit explicit `GOMP_barrier` calls after
   `#pragma omp single`.
 
-Benchmark results are in [Section 8.6](#86-task-execution).
+Benchmark results are in [Section 9.6](#96-task-execution).
 
 ---
 

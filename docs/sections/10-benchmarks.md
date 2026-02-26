@@ -1,9 +1,9 @@
-## 8. Benchmarks
+## 9. Benchmarks
 
 All benchmarks on an Intel i7-10750H (6C/12T), NixOS, GCC 15.2, GHC 9.10.3,
 powersave governor. Best-of-N timing to reduce CPU frequency variance.
 
-### 8.1 Microbenchmarks
+### 9.1 Microbenchmarks
 
 *Source: [`bench_overhead.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/bench_overhead.c)*
 
@@ -51,7 +51,7 @@ powersave governor. Best-of-N timing to reduce CPU frequency variance.
 | 8 | 0.942 | 1.318 | 1.40 |
 <!-- /BENCH:overhead_critical -->
 
-### 8.2 DGEMM
+### 9.2 DGEMM
 
 *Source: [`bench_dgemm.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/bench_dgemm.c), [`omp_compute.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_compute.c)*
 
@@ -86,7 +86,7 @@ CPU frequency noise, not runtime overhead.
 | 4 | 654.66 | 3.28 | 4.5x |
 <!-- /BENCH:dgemm_scaling -->
 
-### 8.3 FFI Scaling
+### 9.3 FFI Scaling
 
 *Source: [`HsMain.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsMain.hs)*
 
@@ -102,7 +102,7 @@ Haskell calling parallel sinsum via safe FFI:
 Near-linear scaling through the FFI boundary, confirming the runtime
 correctly parallelizes work dispatched from Haskell.
 
-### 8.4 Parallelism Crossover
+### 9.4 Parallelism Crossover
 
 *Source: [`HsCrossover.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsCrossover.hs)*
 
@@ -128,7 +128,7 @@ overhead is ~1.8us (86ns safe FFI + 1712ns OpenMP fork/join).
 <img src="charts/crossover.svg" alt="Parallelism Crossover: Sequential vs Parallel" />
 </figure>
 
-### 8.5 GHC Native Parallelism vs OpenMP
+### 9.5 GHC Native Parallelism vs OpenMP
 
 *Source: [`HsParCompare.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsParCompare.hs)*
 
@@ -167,7 +167,7 @@ compiles to 17 instructions vs GCC/LLVM's 10. See
 [Appendix: NCG vs LLVM Code Generation](#appendix-ncg-vs-llvm-code-generation)
 for the full assembly analysis.
 
-### 8.6 Task Execution
+### 9.6 Task Execution
 
 *Source: [`HsTaskDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsTaskDemo.hs), [`test_omp_tasks.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/test_omp_tasks.c)*
 
@@ -186,7 +186,7 @@ Deferred task execution with work-stealing barriers (4 threads, best of 5):
 Near-linear scaling (3.4-4.0x on 4 threads). Correctness verified against
 sequential reference with exact match.
 
-### 8.7 Calling Convention Overhead
+### 9.7 Calling Convention Overhead
 
 *Source: [`HsCmmDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsCmmDemo.hs), [`omp_prims.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_prims.cmm)*
 
@@ -202,7 +202,7 @@ sequential reference with exact match.
 <img src="charts/ffi-overhead.svg" alt="FFI Calling Convention Overhead" />
 </figure>
 
-### 8.8 Batched Calls
+### 9.8 Batched Calls
 
 *Source: [`HsCmmBatch.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsCmmBatch.hs), [`omp_batch.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_batch.cmm)*
 

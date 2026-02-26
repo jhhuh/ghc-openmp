@@ -110,12 +110,13 @@
             promote_headings < docs/sections/06-optimization.md > docs/pages/optimization.md
             promote_headings < docs/sections/07-haskell-integration.md > docs/pages/haskell-integration.md
             promote_headings < docs/sections/08-low-level.md > docs/pages/low-level.md
-            promote_headings < docs/sections/09-benchmarks.md > docs/pages/benchmarks.md
-            promote_headings < docs/sections/10-timeline.md > docs/pages/timeline.md
-            promote_headings < docs/sections/11-bugs.md > docs/pages/bugs.md
-            promote_headings < docs/sections/12-limitations.md > docs/pages/limitations.md
-            promote_headings < docs/sections/13-related-work.md > docs/pages/related-work.md
-            promote_headings < docs/sections/14-conclusions.md > docs/pages/conclusions.md
+            promote_headings < docs/sections/09-shared-memory.md > docs/pages/shared-memory.md
+            promote_headings < docs/sections/10-benchmarks.md > docs/pages/benchmarks.md
+            promote_headings < docs/sections/11-timeline.md > docs/pages/timeline.md
+            promote_headings < docs/sections/12-bugs.md > docs/pages/bugs.md
+            promote_headings < docs/sections/13-limitations.md > docs/pages/limitations.md
+            promote_headings < docs/sections/14-related-work.md > docs/pages/related-work.md
+            promote_headings < docs/sections/15-conclusions.md > docs/pages/conclusions.md
             promote_headings < docs/sections/A1-abi-surface.md > docs/pages/appendix-abi.md
             promote_headings < docs/sections/A2-gomp-primer.md > docs/pages/appendix-gomp.md
             promote_headings < docs/sections/A3-ncg-llvm.md > docs/pages/appendix-ncg-llvm.md
