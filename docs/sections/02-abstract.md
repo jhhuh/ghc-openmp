@@ -13,7 +13,10 @@ with native libgomp** on both microbenchmarks and real numerical workloads
 via FFI, with both runtimes sharing the same thread pool. OpenMP workers
 call back into Haskell via `FunPtr` with automatic Capability
 acquisition. GHC's stop-the-world garbage collector does not pause OpenMP
-workers because they do not hold Capabilities.
+workers because they do not hold Capabilities. The culmination is
+type-safe shared memory: using GHC's linear types, Haskell and OpenMP C
+code operate on disjoint regions of the same array with compile-time
+proof of safety and zero synchronization overhead.
 
 ---
 

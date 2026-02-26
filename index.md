@@ -49,7 +49,10 @@ with native libgomp** on both microbenchmarks and real numerical workloads
 via FFI, with both runtimes sharing the same thread pool. OpenMP workers
 call back into Haskell via `FunPtr` with automatic Capability
 acquisition. GHC's stop-the-world garbage collector does not pause OpenMP
-workers because they do not hold Capabilities.
+workers because they do not hold Capabilities. The culmination is
+type-safe shared memory: using GHC's linear types, Haskell and OpenMP C
+code operate on disjoint regions of the same array with compile-time
+proof of safety and zero synchronization overhead.
 
 ---
 
@@ -66,6 +69,7 @@ If the OpenMP runtime used GHC's thread pool directly, we would get:
 - **Unified resource management** — one thread pool, not two
 - **Seamless interop** — Haskell green threads and OpenMP parallel regions coexist naturally
 - **GHC as a platform** — C programs benefit from GHC's scheduler, and Haskell programs get access to OpenMP's parallel-for without reinventing it
+- **Type-safe shared memory** — linear types can prove disjoint access at compile time, eliminating synchronization barriers when Haskell and C share data
 
 This project investigates whether this is feasible and what the performance
 cost is.
@@ -436,6 +440,11 @@ xychart-beta horizontal
   bar "Phase 3 (lock-free)" [0.81, 0.25]
   bar "Native libgomp" [0.97, 0.51]
 </pre>
+
+With parity established, the runtime becomes a platform. The following
+sections build the capabilities — FFI integration, GC isolation,
+zero-copy sharing, linear types — that culminate in Haskell and OpenMP
+collaborating on shared data structures (§15).
 
 ---
 
@@ -821,6 +830,9 @@ The 19% improvement at N=512 comes from eliminating `CDouble` boxing in the
 O(n³) inner loop. `-ddump-simpl` confirms the hot loop uses `+##`, `*##`, and
 `readDoubleArray#` with no `D#` constructor.
 
+This zero-copy mechanism is what makes shared memory between Haskell and
+C/OpenMP practical — see §15 for the full demonstration.
+
 ---
 
 ## 14. Linear Typed Arrays
@@ -901,24 +913,31 @@ subsequent Haskell reads.
   operations must be forced with `!` to ensure their side effects execute.
 - **Self-contained**: ~200 lines, no dependencies beyond `base` and `ghc-prim`.
 
+With zero-copy sharing (§13) and type-safe partitioning in hand, all
+the pieces are in place for the payoff: §15.
+
 ---
 
 ## 15. Shared Memory Demos
 
-Phases 16–17 established zero-copy sharing (pinned ByteArray) and
-type-safe partitioning (linear tokens). Three demos put these together,
-showing Haskell and OpenMP C code collaborating on the same array with
-progressive coordination strategies.
+Everything in this project builds to this: Haskell and OpenMP C code
+operating on the same data, concurrently, with type-level proof that
+their access patterns are safe. The unified runtime (§6) makes shared
+memory possible; zero-copy FFI (§13) makes it practical; linear types
+(§14) make it correct by construction.
 
+Three demos show this progression — from sequential handoff, through
+defensive synchronization, to compile-time proof of disjoint access.
 All three use the same workload: element-wise
 `f(x) = sin(x) * cos(x) + sqrt(|x|)` applied by both Haskell and C/OpenMP
 to portions of a shared array.
 
-### 15.1 Demo 1: Producer-Consumer
+### 15.1 Demo 1: The basic pattern works
 
 Sequential handoff — Haskell fills, C/OpenMP transforms, Haskell reads.
-No concurrent access, no synchronization. Establishes the basic zero-copy
-sharing pattern.
+No concurrent access, no synchronization. This establishes that the
+plumbing works: a pinned ByteArray created in Haskell is directly
+readable and writable by C/OpenMP code.
 
 | N | OpenMP transform |
 |---|---|
@@ -926,13 +945,15 @@ sharing pattern.
 | 100,000 | 0.40 ms |
 | 1,000,000 | 4.21 ms |
 
-### 15.2 Demo 2: Synchronized Concurrent Access
+### 15.2 Demo 2: The problem — defensive synchronization
 
 Haskell and C/OpenMP each process a disjoint half. Without compile-time
 proof of disjointness, `GOMP_barrier()` is needed for memory visibility —
-even though the regions never overlap.
+even though the regions never overlap. The barrier is cheap (~0.3 us),
+but it represents a fundamental limitation: the programmer must manually
+reason about which regions are disjoint, and the compiler cannot help.
 
-### 15.3 Demo 3: Linear Concurrent Access
+### 15.3 Demo 3: The solution — linear types eliminate barriers
 
 Same partition as Demo 2, but using `split`/`combine` from
 `Data.Array.Linear` to prove disjointness at the type level:
@@ -972,10 +993,15 @@ during C's execution. `combine` consumes both tokens, returning the parent
 
 Scaling is flat: zero barriers regardless of partition count.
 
-The modest 1–4% improvement reflects that barrier latency (~0.3 us) is
-small relative to the compute workload. The primary value is **correctness**:
-the type checker rejects overlapping access at compile time, preventing data
-races without runtime cost.
+The modest 1–4% improvement confirms that barrier elimination is not the
+point — the barrier was already fast. The point is **correctness**: the
+type checker rejects programs that access overlapping regions, turning a
+class of concurrency bugs into compile errors. The programmer no longer
+reasons about which regions are disjoint; the type system enforces it.
+The zero-cost property of `split`/`combine` means this safety has no
+runtime overhead — the type checker becomes a concurrency verification
+tool, and the generated code is identical to the unsafe version minus
+the barrier call.
 
 ---
 
@@ -1188,6 +1214,12 @@ This demonstrates that language runtimes can share threading infrastructure
 across FFI boundaries. A Haskell program can call OpenMP C code, with both
 sharing the same thread pool, the same CPU cores, and coexisting with GHC's
 garbage collector.
+
+Beyond performance parity, unifying the runtimes enables a new programming
+model: Haskell and C code operating on the same data with type-safe
+guarantees. Linear tokens prove disjoint access at compile time,
+eliminating defensive synchronization. The type checker becomes a
+concurrency tool — data races are compile errors, not runtime surprises.
 
 ---
 

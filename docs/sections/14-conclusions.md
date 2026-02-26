@@ -27,5 +27,11 @@ across FFI boundaries. A Haskell program can call OpenMP C code, with both
 sharing the same thread pool, the same CPU cores, and coexisting with GHC's
 garbage collector.
 
+Beyond performance parity, unifying the runtimes enables a new programming
+model: Haskell and C code operating on the same data with type-safe
+guarantees. Linear tokens prove disjoint access at compile time,
+eliminating defensive synchronization. The type checker becomes a
+concurrency tool — data races are compile errors, not runtime surprises.
+
 ---
 

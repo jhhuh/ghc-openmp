@@ -60,5 +60,10 @@ native libgomp on all benchmarks.
 <img src="charts/optimization-journey.svg" alt="Optimization Journey: Phase 2 → Phase 3" />
 </figure>
 
+With parity established, the runtime becomes a platform. The following
+sections build the capabilities — FFI integration, GC isolation,
+zero-copy sharing, linear types — that culminate in Haskell and OpenMP
+collaborating on shared data structures (§15).
+
 ---
 
