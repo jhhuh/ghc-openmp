@@ -1,12 +1,12 @@
-## 8. Shared Memory Demos
+## Shared Memory Demos {#sec:shared-memory}
 
 *Source: [`HsSharedMem1.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsSharedMem1.hs), [`HsSharedMem2.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsSharedMem2.hs), [`HsSharedMem3.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsSharedMem3.hs), [`HsSharedMem4.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsSharedMem4.hs), [`HsSharedMem5.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsSharedMem5.hs), [`omp_shared.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_shared.c)*
 
 Everything in this project builds to this: Haskell and OpenMP C code
 operating on the same data, concurrently, with type-level proof that
-their access patterns are safe. The unified runtime (§6) makes shared
-memory possible; zero-copy FFI (§A.6) makes it practical; linear types
-(§A.7) make it correct by construction.
+their access patterns are safe. The unified runtime ([@sec:haskell-integration]) makes shared
+memory possible; zero-copy FFI ([@sec:zero-copy-ffi]) makes it practical; linear types
+([@sec:linear-arrays]) make it correct by construction.
 
 Five demos show this progression — from sequential handoff, through
 defensive synchronization, to compile-time proof of disjoint access,

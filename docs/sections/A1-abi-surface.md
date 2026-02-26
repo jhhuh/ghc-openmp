@@ -1,4 +1,4 @@
-## Appendix: Implemented ABI Surface
+## Implemented ABI Surface {#sec:appendix-abi}
 
 *All implementations in [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/ghc_omp_runtime_rts.c)*
 

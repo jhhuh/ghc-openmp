@@ -1,17 +1,17 @@
-## 7. Low-Level Techniques
+## Low-Level Techniques {#sec:low-level}
 
 This section describes advanced techniques for reducing overhead at the
 Haskell-C boundary: zero-overhead Cmm primitives, batched FFI calls,
 zero-overhead Cmm primitives and batched FFI calls.
 
-### 7.1 Cmm Primitives
+### Cmm Primitives {#sec:cmm-primitives}
 
 *Source: [`omp_prims.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_prims.cmm), [`HsCmmDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsCmmDemo.hs)*
 
 GHC provides three calling conventions for foreign code, each with different
 overhead. We wrote a Cmm primitive that reads `Capability_no(MyCapability())`
 — the same value as `omp_get_thread_num()` — to measure the overhead of each
-tier (see [Section 9.7](#97-calling-convention-overhead)).
+tier (see [Section @sec:calling-convention-overhead]).
 
 #### The Cmm Primitive
 
@@ -47,13 +47,13 @@ release and reacquire the Capability. For OpenMP regions doing >1us of work,
 this is negligible (<7%).
 
 **The callback overhead gap**: The ~500ns per callback overhead from
-[Section 6.5](#65-bidirectional-callbacks) is ~7x larger than the raw safe FFI
+[Section @sec:bidirectional-callbacks] is ~7x larger than the raw safe FFI
 cost (~68ns). The difference comes from `rts_lock()/rts_unlock()` performing
 additional work beyond `suspendThread()/resumeThread()`: Task structure
 allocation, global Capability search, and lock acquisition. A Cmm-level fast
 path could potentially reduce this.
 
-### 7.2 Batched Safe Calls
+### Batched Safe Calls {#sec:batched-safe-calls}
 
 *Source: [`omp_batch.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_batch.cmm), [`HsCmmBatch.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsCmmBatch.hs)*
 
@@ -118,7 +118,7 @@ Three details were critical for correctness:
    (State# is erased at the Cmm level).
 
 Benchmark results showing speedups up to 27x are in
-[Section 9.8](#98-batched-calls).
+[Section @sec:batched-calls].
 
 ---
 

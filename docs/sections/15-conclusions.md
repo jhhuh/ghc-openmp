@@ -1,4 +1,4 @@
-## 14. Conclusions
+## Conclusions {#sec:conclusions}
 
 GHC's Runtime System can serve as a fully functional OpenMP runtime with
 **zero measurable overhead** compared to native libgomp. The

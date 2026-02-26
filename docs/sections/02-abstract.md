@@ -1,4 +1,4 @@
-## 1. Abstract
+## Abstract {#sec:abstract}
 
 We implement a drop-in OpenMP runtime library that uses GHC's Runtime System
 as its threading infrastructure. Standard C code compiled with

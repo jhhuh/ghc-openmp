@@ -1,4 +1,4 @@
-## A.6 Zero-Copy FFI with Pinned ByteArray
+## Zero-Copy FFI with Pinned ByteArray {#sec:zero-copy-ffi}
 
 *Source: [`HsZeroCopy.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsZeroCopy.hs)*
 

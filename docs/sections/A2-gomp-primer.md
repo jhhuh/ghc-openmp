@@ -1,4 +1,4 @@
-## Appendix: GOMP ABI Primer
+## GOMP ABI Primer {#sec:appendix-gomp}
 
 GCC does not interpret OpenMP pragmas at runtime. Instead, the compiler
 transforms each pragma into calls to `GOMP_*` functions at compile time.

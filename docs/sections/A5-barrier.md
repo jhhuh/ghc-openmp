@@ -1,4 +1,4 @@
-## Appendix: Sense-Reversing Barrier
+## Sense-Reversing Barrier {#sec:appendix-barrier}
 
 *Source: [`spin_barrier_wait`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/ghc_omp_runtime_rts.c#FN:spin_barrier_wait), [`spin_barrier_wait_tasks`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/ghc_omp_runtime_rts.c#FN:spin_barrier_wait_tasks)*
 

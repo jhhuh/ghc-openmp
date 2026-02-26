@@ -1,4 +1,4 @@
-## Appendix: GHC RTS Internals
+## GHC RTS Internals {#sec:appendix-rts}
 
 The GHC Runtime System is the execution environment for compiled Haskell
 programs. This appendix covers the concepts needed to understand how
@@ -77,7 +77,7 @@ C functions that may block or run for a long time.
 Internally, safe FFI calls `suspendThread()` (release Capability, return
 a token) before the C function, and `resumeThread(token)` (reacquire
 Capability) after. This is the mechanism our batched calls exploit
-([Section 7.2](#72-batched-safe-calls)).
+([Section @sec:batched-safe-calls]).
 
 ### Garbage Collection
 
@@ -91,7 +91,7 @@ GC is triggered:
 Critically, GC only synchronizes threads that *hold* Capabilities.
 Our OpenMP workers do not hold Capabilities during parallel execution —
 they are invisible to the GC. This is why OpenMP compute kernels are
-not paused by Haskell garbage collection ([Section 6.4](#64-garbage-collection-isolation)).
+not paused by Haskell garbage collection ([Section @sec:gc-isolation]).
 
 ### STG Machine Registers
 
@@ -110,7 +110,7 @@ uses a set of virtual registers mapped to hardware registers:
 These registers are caller-saved with respect to C calls. Every
 `foreign import ccall` must save them before and restore them after the
 C function. This is the source of the NCG overhead analyzed in the
-[NCG vs LLVM appendix](#appendix-ncg-vs-llvm-code-generation): the NCG
+[Appendix @sec:appendix-ncg-llvm]: the NCG
 saves/restores these registers inside the loop, while the LLVM backend
 hoists them outside.
 

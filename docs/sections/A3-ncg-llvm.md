@@ -1,8 +1,8 @@
-## Appendix: NCG vs LLVM Code Generation
+## NCG vs LLVM Code Generation {#sec:appendix-ncg-llvm}
 
 This appendix details why GHC's default native code generator (NCG) produces
 a ~2x slower inner loop than GCC for `sin()`-heavy workloads, and how the
-LLVM backend eliminates the gap. See [Section 9.5](#95-ghc-native-parallelism-vs-openmp)
+LLVM backend eliminates the gap. See [Section @sec:par-compare]
 for the benchmark results.
 
 ### What the Haskell code compiles to

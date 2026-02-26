@@ -1,4 +1,4 @@
-## A.7 Linear Typed Arrays
+## Linear Typed Arrays {#sec:linear-arrays}
 
 *Source: [`Data/Array/Linear.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/Data/Array/Linear.hs), [`HsLinearDemo.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsLinearDemo.hs)*
 
@@ -8,7 +8,7 @@ of mutable array regions at compile time. The design is inspired by
 `SArray`, which uses phantom-tagged tokens for zero-copy split/combine. A
 self-contained ~200-line module (`Data.Array.Linear`) extracts the core pattern
 and integrates it with the unboxed primops from
-[Appendix A.6](#a6-zero-copy-ffi-with-pinned-bytearray)
+[Appendix @sec:zero-copy-ffi]
 (`readDoubleArray#`/`writeDoubleArray#` instead of `Storable`).
 
 The core idea: linearity is on *tokens* (`RW s`), not the array itself. You

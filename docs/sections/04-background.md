@@ -1,6 +1,6 @@
-## 3. Background
+## Background {#sec:background}
 
-### 3.1 GHC RTS Capabilities
+### GHC RTS Capabilities {#sec:capabilities-bg}
 
 A *Capability* is GHC's central execution unit: one OS thread, one
 run queue of lightweight Haskell threads (TSOs), and one work-stealing spark
@@ -24,7 +24,7 @@ already running (as in a Haskell host program) simply increments the counter
 and returns. This is the key to transparent interop — our runtime
 auto-detects whether it is being hosted by a C program or a Haskell program.
 
-### 3.2 The libgomp ABI
+### The libgomp ABI {#sec:libgomp-abi}
 
 *Source: [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/ghc_omp_runtime_rts.c)*
 
@@ -47,7 +47,7 @@ A minimum viable runtime needs only 9 symbols (`GOMP_parallel`,
 `omp_get_thread_num`). Full OpenMP 4.5 coverage requires ~85
 symbols. Our implementation provides ~97.
 
-### 3.3 Cmm and `foreign import prim`
+### Cmm and `foreign import prim` {#sec:cmm-prim}
 
 *Source: [`omp_prims.cmm`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_prims.cmm)*
 

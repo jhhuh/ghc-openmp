@@ -1,4 +1,4 @@
-## 6. Haskell Integration
+## Haskell Integration {#sec:haskell-integration}
 
 This section covers the integration between Haskell and the OpenMP runtime:
 calling conventions, initialization, concurrent execution, garbage collection
@@ -6,7 +6,7 @@ behavior, and bidirectional callbacks.
 
 See also the [Haddock API reference](haddock/) for the `GHC.OpenMP` module.
 
-### 6.1 FFI Calling Convention
+### FFI Calling Convention {#sec:ffi-calling-convention}
 
 *Source: [`HsMain.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsMain.hs)*
 
@@ -27,7 +27,7 @@ return. This means:
 - No deadlock: workers don't need to hold Capabilities to execute C
   compute kernels
 
-### 6.2 RTS Initialization
+### RTS Initialization {#sec:rts-init}
 
 When called from a Haskell host, `hs_init_ghc()` is already done
 by GHC before `main`. Our runtime's `ensure_rts()` calls
@@ -35,7 +35,7 @@ by GHC before `main`. Our runtime's `ensure_rts()` calls
 and returns. The runtime discovers the existing Capabilities via
 `getNumCapabilities()` and spawns workers for Caps 1..N-1.
 
-### 6.3 Concurrent Execution
+### Concurrent Execution {#sec:concurrent-execution}
 
 *Source: [`HsConcurrent.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsConcurrent.hs)*
 
@@ -56,7 +56,7 @@ _ <- forkIO $ do
 Measured: sequential 68ms → concurrent 58ms, with 10ms of overlapping
 execution confirmed.
 
-### 6.4 Garbage Collection Isolation
+### Garbage Collection Isolation {#sec:gc-isolation}
 
 *Source: [`HsGCStress.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsGCStress.hs)*
 
@@ -87,7 +87,7 @@ boundary.
 
 GHC RTS statistics: 99.7% productivity, GC time <0.5% of elapsed.
 
-### 6.5 Bidirectional Callbacks
+### Bidirectional Callbacks {#sec:bidirectional-callbacks}
 
 *Source: [`HsCallback.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsCallback.hs), [`omp_compute.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_compute.c)*
 

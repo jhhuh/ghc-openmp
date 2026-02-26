@@ -1,10 +1,10 @@
-## 5. Optimization: From 24x Slower to Parity
+## Optimization: From 24x Slower to Parity {#sec:optimization}
 
 The Phase 2 runtime was functional but slow: fork/join took 24 us vs
 libgomp's 1 us. The bottleneck was mutex+condvar on every operation. We
 eliminated all locks from the hot path:
 
-### 5.1 Lock-free Work Dispatch
+### Lock-free Work Dispatch {#sec:lockfree-dispatch}
 
 ```c
 // Master: store work, then release-fence generation increment
@@ -20,7 +20,7 @@ while (atomic_load(&g_pool.generation, memory_order_acquire) == my_gen)
 No mutex on the hot path. The condvar broadcast is only for workers that
 fell asleep after 4000 spin iterations.
 
-### 5.2 Sense-Reversing Barrier
+### Sense-Reversing Barrier {#sec:sense-barrier}
 
 The sense-reversing centralized barrier follows Mellor-Crummey & Scott's
 algorithm (*"Algorithms for Scalable Synchronization on Shared-Memory
@@ -44,7 +44,7 @@ void spin_barrier_wait(spin_barrier_t *b, int *local_sense) {
 Pure atomic operations, no locks. The centralized design has O(N) wakeup but
 is optimal for small team sizes (typical OpenMP use).
 
-### 5.3 Results
+### Results {#sec:opt-results}
 
 | Metric (4 threads) | Phase 2 | Phase 3 | Native libgomp |
 |---|---|---|---|
@@ -63,7 +63,7 @@ native libgomp on all benchmarks.
 With parity established, the runtime becomes a platform. The following
 sections build the capabilities — FFI integration, GC isolation,
 zero-copy sharing, linear types — that culminate in Haskell and OpenMP
-collaborating on shared data structures (§8).
+collaborating on shared data structures ([@sec:shared-memory]).
 
 ---
 

@@ -81,50 +81,23 @@
             }
 
             for f in docs/sections/*.md; do
-              substituteInPlace "$f" --replace-quiet GIT_COMMIT "${self.rev or "main"}"
               resolve_fn_anchors "$f"
             done
 
+            # Preprocess: auto-number, resolve refs, inject bench data, generate TOC
+            ${mkdocsEnv}/bin/python3 scripts/preprocess_docs.py \
+              --sections docs/sections/ \
+              --bench-data artifacts/bench/results.json \
+              --system-info artifacts/bench/system_info.json \
+              --commit "${self.rev or "main"}" \
+              --single-page docs/index.md \
+              --multi-page docs/pages/ \
+              --charts-dir docs/charts/
+
             # === Single-page build ===
-            cat docs/sections/*.md > docs/index.md
             mkdocs build -d _site
 
             # === Multi-page build ===
-            mkdir -p docs/pages/charts
-            cp docs/charts/*.svg docs/pages/charts/ 2>/dev/null || true
-
-            # Map section files to page names with heading promotion
-            promote_headings() {
-              sed 's/^##### /#### /; s/^#### /### /; s/^### /## /; s/^## /# /'
-            }
-
-            # Frontmatter → index (keep # heading as-is, add single-page link)
-            sed 's|Multi-page view](pages/)|Single-page view](../)|' \
-              docs/sections/00-frontmatter.md > docs/pages/index.md
-            # Skip TOC (01-contents.md) — MkDocs sidebar handles navigation
-
-            promote_headings < docs/sections/02-abstract.md > docs/pages/abstract.md
-            promote_headings < docs/sections/03-motivation.md > docs/pages/motivation.md
-            promote_headings < docs/sections/04-background.md > docs/pages/background.md
-            promote_headings < docs/sections/05-architecture.md > docs/pages/architecture.md
-            promote_headings < docs/sections/06-optimization.md > docs/pages/optimization.md
-            promote_headings < docs/sections/07-haskell-integration.md > docs/pages/haskell-integration.md
-            promote_headings < docs/sections/08-low-level.md > docs/pages/low-level.md
-            promote_headings < docs/sections/09-shared-memory.md > docs/pages/shared-memory.md
-            promote_headings < docs/sections/10-benchmarks.md > docs/pages/benchmarks.md
-            promote_headings < docs/sections/11-timeline.md > docs/pages/timeline.md
-            promote_headings < docs/sections/12-bugs.md > docs/pages/bugs.md
-            promote_headings < docs/sections/13-limitations.md > docs/pages/limitations.md
-            promote_headings < docs/sections/14-related-work.md > docs/pages/related-work.md
-            promote_headings < docs/sections/15-conclusions.md > docs/pages/conclusions.md
-            promote_headings < docs/sections/A1-abi-surface.md > docs/pages/appendix-abi.md
-            promote_headings < docs/sections/A2-gomp-primer.md > docs/pages/appendix-gomp.md
-            promote_headings < docs/sections/A3-ncg-llvm.md > docs/pages/appendix-ncg-llvm.md
-            promote_headings < docs/sections/A4-rts-internals.md > docs/pages/appendix-rts.md
-            promote_headings < docs/sections/A5-barrier.md > docs/pages/appendix-barrier.md
-            promote_headings < docs/sections/A6-zero-copy.md > docs/pages/appendix-zero-copy.md
-            promote_headings < docs/sections/A7-linear-arrays.md > docs/pages/appendix-linear-arrays.md
-
             mkdocs build -f mkdocs-multi.yml -d _site/pages
 
             # Copy Haddock API docs from nixpkgs-built package

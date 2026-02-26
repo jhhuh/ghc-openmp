@@ -415,3 +415,78 @@ This completes the demo progression:
 - Demo 3: Linear types eliminate barriers (Haskell seq + C parallel)
 - Demo 4: Safety — why barriers exist
 - Demo 5: Pure Haskell parallelism via sparks + linear types
+
+## 2026-02-26: Section renumbering and doc build quality issues
+
+### Manual numbering is fragile
+
+Adding `08a-shared-memory.md` to avoid renumbering broke in multiple ways:
+- Missing from flake.nix page mappings and mkdocs-multi.yml nav
+- No section number in heading (was `## Shared Memory Demos` not `## 8.`)
+- Cross-references pointing to wrong sections (`§13`/`§14` instead of `§A.6`/`§A.7`)
+
+Full renumbering of all sections (08a→09, 09→10, ... 14→15) required touching
+14 files and updating dozens of cross-references. Exactly the fragility LaTeX
+solves with `\label`/`\ref`.
+
+### Decision: pandoc-crossref for auto-numbering
+
+Research confirmed pandoc-crossref 0.3.21 (nixpkgs) works for markdown→markdown:
+- `{#sec:label}` on headings, `@sec:label` for references
+- `numberSections: true` + `sectionsDepth: -1` in YAML metadata
+- `-t markdown-simple_tables --wrap=none` for clean markdown output
+- Headings get numbers injected: `## Architecture` → `## 4. Architecture`
+- References resolved: `@sec:architecture` → `sec. 4` with hyperlink
+
+Pipeline: concat sections → pandoc-crossref → mkdocs. Pandoc is preprocessor,
+MkDocs remains the renderer.
+
+### Broader build-time coherence requirements (user-driven)
+
+User identified that the entire doc build has coherence problems:
+1. **Benchmark data**: tables can drift from actual results.json
+2. **System metadata**: "Intel i7-10750H, GCC 15.2" is hardcoded, should come
+   from system_info.json
+3. **Commit hash**: already substituted (GIT_COMMIT) but benchmark commit isn't tracked
+4. **Cross-references**: manual and error-prone
+
+Proposed solution: build-time validation that fails if:
+- `<!-- BENCH: -->` table content doesn't match what update_bench_tables.sh generates
+- System info line doesn't match system_info.json
+- Source files newer than results.json (stale benchmarks)
+- pandoc-crossref reports undefined references
+
+Skill file: `artifacts/skills/pandoc-crossref-autonumbering-with-mkdocs-rendering.md`
+
+## 2026-02-26: Implemented auto-numbering and build-time data injection
+
+Rejected pandoc-crossref (anchor mismatch with MkDocs, appendix numbering,
+table mangling). Implemented custom Python preprocessor instead.
+
+**New file**: `scripts/preprocess_docs.py` (~400 lines, stdlib only)
+- Auto-numbers §1-§14 main sections, A.1-A.7 appendices
+- Resolves `[@sec:label]` symbolic cross-refs (47 labels)
+- Injects BENCH tables from results.json (11 bench keys)
+- Injects META data (system_info, bench_date, commit)
+- Generates TOC, writes single-page + multi-page output
+- Validates coherence: build fails on unresolved refs, missing data
+
+**Source format changes** (all 22 docs/sections/*.md):
+- Stripped manual numbers from headings, added `{#sec:label}` labels
+- Converted cross-refs from `[§N](#anchor)` to `[@sec:label]`
+- BENCH content stripped (empty markers only — injected at build time)
+- System info replaced with `<!-- META:system_info -->`
+- TOC replaced with `<!-- TOC -->` marker
+
+**flake.nix**: Replaced manual `cat` + `substituteInPlace` + heading promotion
+with single preprocessor call. Removed ~50 lines of shell code.
+
+**update_bench_tables.sh**: Removed all docs section editing. Now only updates
+README tables and generates ChartData.hs.
+
+**Bug found**: Regex `\S+?` (non-greedy) matched just 1 char in cross-ref labels.
+Fixed to `[^\s\]]+` (greedy, stops at whitespace or `]`).
+
+**Bug found during conversion**: `12-bugs.md` had subsection numbers `### 10.1`
+and `### 10.2` that should have been `### 11.1` — exactly the stale-numbering
+bug that auto-numbering prevents.

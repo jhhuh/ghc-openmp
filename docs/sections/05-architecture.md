@@ -1,4 +1,4 @@
-## 4. Architecture
+## Architecture {#sec:architecture}
 
 *Source: [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/ghc_omp_runtime_rts.c)*
 
@@ -14,7 +14,7 @@ hold Capabilities — invisible to GC.*
 > APIs — over modifying GHC's RTS source directly or using `foreign export`.
 > This keeps the runtime as a single `.c` file with no GHC fork required.
 
-### 4.1 Worker Pool Design
+### Worker Pool Design {#sec:worker-pool}
 
 N-1 worker threads are created at initialization. Each is pinned to a GHC
 Capability via `rts_setInCallCapability(i, 1)`, performs one
@@ -28,7 +28,7 @@ The master thread (Capability 0) dispatches work by:
 3. Broadcasting a condvar (for sleeping workers)
 4. Participating in the start barrier, executing `fn(data)`, and hitting the end barrier
 
-### 4.2 Synchronization Primitives
+### Synchronization Primitives {#sec:sync-primitives}
 
 All barriers use a **sense-reversing centralized barrier**:
 each thread maintains a local sense flag. Threads atomically decrement a shared
@@ -51,7 +51,7 @@ thread. Full `omp_get_level()`, `omp_get_active_level()`,
 `omp_get_ancestor_thread_num()`, and `omp_get_team_size()` support with
 per-thread nesting state up to 8 levels deep.
 
-### 4.3 Task Queues and Work Stealing
+### Task Queues and Work Stealing {#sec:task-queues}
 
 *Source: [`ghc_omp_runtime_rts.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/ghc_omp_runtime_rts.c), [`test_omp_tasks.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/test_omp_tasks.c)*
 
@@ -77,7 +77,7 @@ with an atomic pending counter for fast-path bypass:
   variant, since GCC may omit explicit `GOMP_barrier` calls after
   `#pragma omp single`.
 
-Benchmark results are in [Section 9.6](#96-task-execution).
+Benchmark results are in [Section @sec:task-execution].
 
 ---
 

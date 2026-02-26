@@ -1,4 +1,4 @@
-## 2. Motivation
+## Motivation {#sec:motivation}
 
 GHC's RTS has a mature, production-quality thread pool with per-Capability
 run queues, work-stealing spark pools, NUMA awareness, and sophisticated

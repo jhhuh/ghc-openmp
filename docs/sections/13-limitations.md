@@ -1,4 +1,4 @@
-## 12. Limitations
+## Limitations {#sec:limitations}
 
 | Limitation | Impact | Notes |
 |---|---|---|

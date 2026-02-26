@@ -1,6 +1,6 @@
-## 11. Notable Bugs and Fixes
+## Notable Bugs and Fixes {#sec:bugs}
 
-### 10.1 Barrier Sense Mismatch Deadlock
+### Barrier Sense Mismatch Deadlock {#sec:barrier-sense-bug}
 
 **Symptom**: Program hangs when calling `GOMP_parallel`
 from a `forkIO` thread at `-N4`. No output at all. Works
@@ -17,7 +17,7 @@ barrier's global sense to 0. On the next region:
 **Fix**: Reset all local sense variables to 0 at the start of
 each parallel region, matching the freshly initialized barriers.
 
-### 10.2 False Parallel-For Regression
+### False Parallel-For Regression {#sec:false-parfor-bug}
 
 **Symptom**: At 4 threads, parallel for appeared 1.65x slower
 than native libgomp (6.7ms vs 4.1ms).
