@@ -146,7 +146,7 @@ test-nested: build/test_nested_native build/test_nested_rts
 	@echo "=== Nested: GHC RTS-backed ==="
 	@OMP_NUM_THREADS=4 build/test_nested_rts
 
-test-all: test-native test-ghcomp test-rts-embed test-rts demo test-guided test-nested
+test-all: test-native test-ghcomp test-rts-embed test-rts demo test-guided test-nested demo-shared
 
 # ---- Phase 4: Haskell ↔ OpenMP Interop ----
 
@@ -328,6 +328,45 @@ demo-linear: build/linear_demo
 	@echo "=== Linear Typed Arrays Demo ==="
 	build/linear_demo +RTS -N4
 
+# Shared memory demos
+build/omp_shared.o: cbits/omp_shared.c
+	@mkdir -p build
+	$(CC) -fopenmp $(CFLAGS) -c $< -o $@
+
+build/shared1_demo: demos/HsSharedMem1.hs build/omp_shared.o build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		$^ -o $@ -lpthread -lm \
+		-outputdir build/hs_shared1_out
+
+build/shared2_demo: demos/HsSharedMem2.hs build/omp_shared.o build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		$^ -o $@ -lpthread -lm \
+		-outputdir build/hs_shared2_out
+
+build/shared3_demo: demos/HsSharedMem3.hs demos/Data/Array/Linear.hs build/omp_shared.o build/omp_compute.o build/ghc_omp_runtime_rts.o
+	@mkdir -p build
+	$(GHC) -threaded -O2 \
+		demos/HsSharedMem3.hs demos/Data/Array/Linear.hs build/omp_shared.o build/omp_compute.o build/ghc_omp_runtime_rts.o \
+		-o $@ -lpthread -lm \
+		-idemos \
+		-outputdir build/hs_shared3_out
+
+demo-shared1: build/shared1_demo
+	@echo "=== Shared Memory Demo 1: Producer-Consumer ==="
+	build/shared1_demo +RTS -N4
+
+demo-shared2: build/shared2_demo
+	@echo "=== Shared Memory Demo 2: Synchronized ==="
+	build/shared2_demo +RTS -N4
+
+demo-shared3: build/shared3_demo
+	@echo "=== Shared Memory Demo 3: Linear ==="
+	build/shared3_demo +RTS -N4
+
+demo-shared: demo-shared1 demo-shared2 demo-shared3
+
 # ---- Benchmarks ----
 
 build/bench_native: cbits/bench_overhead.c
@@ -394,6 +433,7 @@ BUILD_ALL_BINS = \
 	build/cmm_demo build/cmm_batch \
 	build/crossover build/par_compare build/task_demo \
 	build/zerocopy_demo build/linear_demo \
+	build/shared1_demo build/shared2_demo build/shared3_demo \
 	build/bench_native build/bench_rts \
 	build/bench_dgemm_native build/bench_dgemm_rts
 
