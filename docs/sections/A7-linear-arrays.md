@@ -77,7 +77,15 @@ subsequent Haskell reads.
   threads that GHC can reorder under `-O2`.
 - **Bang patterns for sequencing**: In lazy contexts, token-producing
   operations must be forced with `!` to ensure their side effects execute.
-- **Self-contained**: ~200 lines, no dependencies beyond `base` and `ghc-prim`.
+- **`parCombine` for GHC sparks**: A parallel variant of `combine` that sparks
+  the left token for parallel evaluation using `spark#`/`seq#`. Uses
+  `unsafePerformIO` (which includes `noDuplicate#`) to prevent thunk
+  duplication — essential when tokens are produced by destructive array
+  operations. `unsafeCoerce#` bridges linear types with non-linear GHC
+  primitives (same approach as
+  [`konn/linear-extra`](https://github.com/konn/linear-extra)'s
+  `Unsafe.toLinear`).
+- **Self-contained**: ~280 lines, no dependencies beyond `base` and `ghc-prim`.
 
 ---
 
