@@ -22,6 +22,7 @@ theme:
     - content.code.copy
     - navigation.top
     - navigation.sections
+    - toc.integrate
     - toc.follow
 
 markdown_extensions:
