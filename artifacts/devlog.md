@@ -262,3 +262,156 @@ promotion) are built from the same resolved sources.
 ### Cmm syntax highlighting
 Changed ```` ```cmm ```` to ```` ```c ```` in `08-low-level.md` since Pygments
 doesn't have a Cmm lexer. C highlighting is close enough.
+
+## 2026-02-25: Shared memory docs restructure
+
+Reframed shared memory demos as narrative climax (§15) rather than appendix.
+Progressive sequence: Demo 1 (sequential handoff) → Demo 2 (defensive barriers)
+→ Demo 3 (linear types eliminate barriers). Each builds on the last.
+
+## 2026-02-26: Fine-partitioning benchmarks — fix real barrier measurement
+
+### GOMP_barrier after parallel region is a no-op
+
+**Critical discovery**: `GOMP_barrier()` called after `GOMP_parallel_end()` is a
+no-op — `tl_num_threads=1` (only master thread). Demo 2 was measuring nothing.
+Real barriers must be INSIDE `#pragma omp parallel` regions.
+
+**Fix**: Added `transform_partitioned_barrier` and `transform_partitioned_nobarrier`
+to `cbits/omp_shared.c`. These create one parallel region and loop over partitions
+inside it, with `#pragma omp for schedule(static)` (implicit barrier) or
+`#pragma omp for schedule(static) nowait`. Total barriers = iters × num_parts.
+
+Updated Demos 2 and 3 to use these real C partition functions. Extended partition
+range to [2..1024]. Demo 3 added Benchmark 3: head-to-head C-barrier vs
+C-nobarrier vs Haskell-linear.
+
+## 2026-02-26: Demo 4 — Safety demos (why barriers exist)
+
+### Part A: Off-by-one overlap
+
+Each partition writes [off..off+chunk+1) instead of [off..off+chunk). Boundary
+elements written by two partitions. Three variants:
+- `c_partitioned_nobarrier` (disjoint) — correct reference
+- `c_overlap_barrier` — deterministic but wrong (double-write at boundaries)
+- `c_overlap_nowait` — data race (non-deterministic)
+
+**Bug 1: Overlap invisible with `=`**. Both partitions compute the same `f(in[i])`
+for boundary elements. Assignment is idempotent: `out[i] = f(in[i])` twice gives
+the same result. Fix: changed to `+=` with zero-initialization. Boundary elements
+accumulate `2*f(x)`, making the double-write detectable.
+
+### Part B: Two-pass stencil
+
+Pass 1: `out[i] = f(in[i])` (independent). Pass 2: `out[i] = avg(out[i-1..i+1])`
+(reads neighbors). Without barrier between passes, pass 2 reads stale/zero values.
+
+**Bug 2: Race not triggering with `schedule(static)`**. Static scheduling assigns
+the same elements to each thread in both passes. The race window is near zero —
+thread T finishes pass 1 and starts pass 2 on the same elements, which are already
+written. Fix: `schedule(dynamic, 64)` varies element-to-thread assignment across
+passes, reliably triggering stale reads (max diff = 1.09e-2).
+
+**Bug 3: Haskell linear showing huge errors (3.0 to 31.7)**. Base-offset bug in
+`linearMultiPass1`: when output array is a right-half slice with offset=n/2,
+`linearTransform` reads `arrIn[0..n/2-1]` instead of `arrIn[n/2..n-1]`. Fix:
+added `linearTransformAt` with explicit `base` parameter, threaded through
+recursive splitting. Same bug existed in Demo 3's `linearMultiPartition` — fixed.
+
+**Bug 4: C stencil vs Haskell reference mismatch (4e-7 even with barriers)**.
+C parallel stencil is Jacobi-style (reads original neighbor values). Haskell
+sequential is Gauss-Seidel (reads already-updated left neighbors). These are
+fundamentally different algorithms. Fix: compare apples-to-apples — C nowait vs
+C barrier (both Jacobi), Haskell linear vs Haskell ref (both Gauss-Seidel).
+
+### linearPass2 compilation error
+
+`let (cur, rw1) = unsafeRead rw arr i` consumed the linear token for a read,
+leaving no token for subsequent writes. Error: "Couldn't match type 'Many' with
+'One'". Fix: use fabricated `MkRW` for ALL reads (which don't actually consume
+ownership), only consume real `rw` through `unsafeWrite`.
+
+### Final results
+
+Part A: Disjoint=0 CORRECT, Overlap+barrier=3-31 WRONG, Overlap+nowait=3-31 WRONG.
+Part B: C nowait=1.09e-2 WRONG (stale reads), Haskell linear=0 CORRECT.
+
+## 2026-02-26: Research on konn/linear-extra
+
+Investigated `github.com/konn/linear-extra` for improvement ideas.
+
+**Key architectural differences from our `Data.Array.Linear`**:
+1. Separated R/W tokens: `R s` (read) + `W s` (write) vs our monolithic `RW s`
+2. Non-Consumable tokens via `Unsatisfiable` — prevents accidental token discard
+3. `combine` returns parent `DArray` (not just token) — prevents use-after-combine
+4. Zero-bit `SlicesTo` via `UnliftedNewtypes` over `Void#`
+5. `noDuplicate#` for correctness with `par` — prevents GHC from duplicating
+   thunks containing mutations
+6. Storable-based vs our MutableByteArray#-based
+7. `freeze` produces `Vector` in O(1) vs our O(n) list copy
+8. `besides` mechanism for allocating alongside existing linear values
+9. Linear `par` using `spark#` + `noDuplicate#`
+
+**Discourse post**: konn's FFT experience report shows ThreadScope multi-core
+visualization. `linear-fft`: Pure, parallel, in-place FFT using linear types.
+`linear-parallel`: Linear par/seq combinators.
+
+### Proposed improvements (approved by user)
+
+1. Add `par` combinator using `spark#` + `noDuplicate#` to `Data.Array.Linear`
+2. Switch from `unsafeDupablePerformIO` to `noDuplicate#` in write operations
+3. Mark `split`, `combine`, `halve` as `NOINLINE`
+4. Create Demo 5: Parallel Prefix Sum using new `par` combinator
+
+## 2026-02-26: Implement parCombine and Demo 5
+
+### Data.Array.Linear improvements
+
+Added to `demos/Data/Array/Linear.hs`:
+1. `NOINLINE` pragmas on `split`, `combine`, `halve` — prevents GHC from
+   inlining and accidentally allowing token misuse
+2. `parCombine` — like `combine` but sparks the left token and evaluates the
+   right on the current thread. Uses `spark#` + `seq#` via `unsafePerformIO`
+   (which includes `noDuplicate#`)
+
+Implementation detail: `parCombine` uses `unsafeCoerce#` to bridge linear
+types with non-linear GHC spark primitives. This is the same approach as
+`konn/linear-extra`'s `Unsafe.toLinear`. The linearity contract is upheld:
+each token is consumed exactly once (sparked or sequenced).
+
+Kept `unsafeDupablePerformIO` for individual `unsafeRead`/`unsafeWrite` —
+these are protected by linear token consumption, and the faster dupable
+variant is appropriate. Only `parCombine` needs `noDuplicate#` for the
+spark+eval sequence.
+
+### Demo 5: GHC Spark Parallelism
+
+Pure Haskell parallelism via GHC sparks + linear types. Same transform
+workload as Demos 2–4 but no C/OpenMP. Recursive split + parCombine.
+
+Results on 4 capabilities:
+```
+Depth  Parts  Sequential  Parallel  Speedup
+0      1       41.9 ms    43.6 ms   0.96x
+1      2       44.4 ms    22.3 ms   1.99x  ← near-ideal
+2      4       42.5 ms    13.8 ms   3.09x  ← near-ideal on 4 cores
+3      8       42.1 ms    15.0 ms   2.80x
+5      32      46.1 ms    13.5 ms   3.41x
+6      64      45.7 ms    13.7 ms   3.34x
+```
+
+Array size scaling (depth=3, 8 partitions):
+```
+N         Sequential  Parallel  Speedup
+10K        0.4 ms     0.4 ms    0.97x
+100K       4.4 ms     3.0 ms    1.49x
+1M        43.3 ms    17.0 ms    2.55x
+4M       164.6 ms    53.3 ms    3.09x
+```
+
+This completes the demo progression:
+- Demo 1: Sequential handoff (no concurrency)
+- Demo 2: Concurrent with defensive barriers
+- Demo 3: Linear types eliminate barriers (Haskell seq + C parallel)
+- Demo 4: Safety — why barriers exist
+- Demo 5: Pure Haskell parallelism via sparks + linear types

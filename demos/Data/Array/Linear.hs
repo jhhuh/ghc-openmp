@@ -37,6 +37,7 @@ module Data.Array.Linear
     , split
     , halve
     , combine
+    , parCombine
       -- * C FFI
     , withPtr
     , unsafeWithPtr
@@ -49,7 +50,7 @@ import GHC.Exts
 import GHC.IO (IO(..))
 import Foreign (Ptr(..), plusPtr)
 import Foreign.C (CDouble(..))
-import System.IO.Unsafe (unsafeDupablePerformIO)
+import System.IO.Unsafe (unsafeDupablePerformIO, unsafePerformIO)
 
 ------------------------------------------------------------------------
 -- Core types
@@ -177,16 +178,52 @@ split MkRW k (DArray n mba off) =
     MkSlice MkSlicesTo MkRW MkRW
         (DArray k       mba off)
         (DArray (n - k) mba (off + k))
+{-# NOINLINE split #-}
 
 -- | Split an array in half.
 halve :: RW s %1 -> DArray s -> Slice s
 halve rw arr = split rw (size arr `div` 2) arr
+{-# NOINLINE halve #-}
 
 -- | Recombine two halves. Consumes both child tokens and the
 -- 'SlicesTo' witness, returning the parent token.
 -- Zero-cost: no allocation, no copying.
 combine :: SlicesTo s l r %1 -> RW l %1 -> RW r %1 -> RW s
 combine MkSlicesTo MkRW MkRW = MkRW
+{-# NOINLINE combine #-}
+
+-- | Like 'combine' but evaluates both child tokens in parallel
+-- using GHC sparks. The left token is sparked for parallel
+-- evaluation; the right token is evaluated on the current thread.
+-- Then waits for the left to complete before returning the
+-- parent token.
+--
+-- Uses 'unsafePerformIO' (which includes 'noDuplicate#') to
+-- prevent thunk duplication — essential when the tokens are
+-- produced by destructive array operations.
+--
+-- Usage:
+--
+-- @
+-- case halve rw arrOut of
+--     MkSlice st rwL rwR arrL arrR ->
+--         let rwL' = transform rwL arrIn arrL
+--             rwR' = transform rwR arrIn arrR
+--         in parCombine st rwL' rwR'
+-- @
+parCombine :: SlicesTo s l r %1 -> RW l %1 -> RW r %1 -> RW s
+parCombine = unsafeCoerce# parCombineGo
+  where
+    parCombineGo :: SlicesTo s l r -> RW l -> RW r -> RW s
+    parCombineGo MkSlicesTo l r =
+        case unsafePerformIO (IO $ \s0 ->
+            case spark# l s0 of { (# s1, _ #) ->
+            case seq# r s1 of { (# s2, _ #) ->
+            case seq# l s2 of { (# s3, _ #) ->
+            (# s3, () #) }}}) of
+        () -> MkRW
+    {-# NOINLINE parCombineGo #-}
+{-# NOINLINE parCombine #-}
 
 ------------------------------------------------------------------------
 -- C FFI

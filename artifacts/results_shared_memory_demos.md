@@ -120,10 +120,79 @@ shine:
    copying, or runtime checks. The tokens (`RW s`) are erased at runtime.
    The type-level guarantees add zero overhead.
 
+## Demo 4: Safety — why barriers exist
+
+*Source: [`HsSharedMem4.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsSharedMem4.hs)*
+
+Two examples showing that removing barriers (`nowait`) without proof of
+disjointness silently introduces bugs, and how linear types prevent both.
+
+### Part A: Off-by-one overlap
+
+Each partition writes [off..off+chunk+1) instead of [off..off+chunk).
+Boundary elements are written by two partitions.
+
+```
+  N=10000, P=4 partitions:
+    Disjoint + nobarrier:  max diff = 0.00e+0   CORRECT
+    Overlap  + barrier:    max diff = 3.06e+0   WRONG (double-write at boundaries)
+    Overlap  + nowait:     max diff = 3.06e+0   WRONG (data race at boundaries)
+
+  N=100000, P=16 partitions:
+    Disjoint + nobarrier:  max diff = 0.00e+0   CORRECT
+    Overlap  + barrier:    max diff = 1.97e+1   WRONG
+    Overlap  + nowait:     max diff = 1.97e+1   WRONG
+
+  N=1000000, P=64 partitions:
+    Disjoint + nobarrier:  max diff = 0.00e+0   CORRECT
+    Overlap  + barrier:    max diff = 3.18e+1   WRONG
+    Overlap  + nowait:     max diff = 3.18e+1   WRONG
+```
+
+With linear split: impossible — the type system rejects overlapping ranges.
+
+### Part B: Two-pass stencil
+
+Pass 1: `out[i] = f(in[i])` (independent). Pass 2: `out[i] = avg(out[i-1..i+1])`
+(reads neighbors across partition boundaries).
+
+```
+  N=10000, P=4 partitions:
+    C barrier:             reference (correct Jacobi stencil)
+    C nowait (10 runs):    max diff vs barrier = 2.68e-2  WRONG (stale reads)
+    Haskell linear:        max diff vs ref     = 0.00e+0  CORRECT
+
+  N=100000, P=16 partitions:
+    C barrier:             reference
+    C nowait (10 runs):    max diff vs barrier = 1.09e-2  WRONG (stale reads)
+    Haskell linear:        max diff vs ref     = 0.00e+0  CORRECT
+
+  N=1000000, P=64 partitions:
+    C barrier:             reference
+    C nowait (10 runs):    max diff vs barrier = 4.44e-3  WRONG (stale reads)
+    Haskell linear:        max diff vs ref     = 0.00e+0  CORRECT
+```
+
+### Interpretation
+
+**Barriers exist for a reason**: removing them (`nowait`) without proof of
+disjointness introduces silent bugs — overlapping writes (Part A) and stale
+cross-boundary reads (Part B). These bugs are non-deterministic and hard to
+reproduce, making them dangerous in production.
+
+**Linear types prevent both at compile time**:
+- `split` produces non-overlapping views → prevents Part A
+- `combine` forces completion before cross-boundary reads → prevents Part B
+
+The Haskell linear stencil is both correct AND barrier-free: `combine` forces
+pass 1 to complete (by consuming child tokens before returning parent token),
+then pass 2 uses the parent token for cross-boundary reads.
+
 ## Files
 
-- `cbits/omp_shared.c` — C kernels: `transform_all`, `transform_range`, `transform_range_barrier`
+- `cbits/omp_shared.c` — C kernels: all transform + overlap + stencil functions
 - `demos/HsSharedMem1.hs` — Demo 1: producer-consumer
 - `demos/HsSharedMem2.hs` — Demo 2: synchronized concurrent
 - `demos/HsSharedMem3.hs` — Demo 3: linear concurrent
+- `demos/HsSharedMem4.hs` — Demo 4: safety (overlap + stencil)
 - `demos/Data/Array/Linear.hs` — Linear typed array module
