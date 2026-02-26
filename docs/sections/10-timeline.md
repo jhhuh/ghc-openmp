@@ -23,6 +23,7 @@ a reference to the section containing full details.
 | 16 | Zero-copy FFI with pinned ByteArray — 19% inner loop speedup | [§A.6](#a6-zero-copy-ffi-with-pinned-bytearray) |
 | 17 | Linear typed arrays for type-safe disjoint partitioning | [§A.7](#a7-linear-typed-arrays) |
 | 18 | Runtime improvements: guided scheduling, hybrid barriers, task pools | [§4](#4-architecture) |
+| 19 | Shared memory demos: producer-consumer, synchronized, linear | [§A.8](#a8-shared-memory-demos) |
 
 ---
 

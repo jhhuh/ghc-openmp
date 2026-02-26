@@ -18,6 +18,9 @@
 16. [Appendix: NCG vs LLVM Code Generation](#appendix-ncg-vs-llvm-code-generation)
 17. [Appendix: GHC RTS Internals](#appendix-ghc-rts-internals)
 18. [Appendix: Sense-Reversing Barrier](#appendix-sense-reversing-barrier)
+19. [Appendix: Zero-Copy FFI](#appendix-zero-copy-ffi-with-pinned-bytearray)
+20. [Appendix: Linear Typed Arrays](#appendix-linear-typed-arrays)
+21. [Appendix: Shared Memory Demos](#appendix-shared-memory-demos)
 
 ---
 

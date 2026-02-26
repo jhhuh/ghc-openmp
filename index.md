@@ -25,10 +25,11 @@ title: "GHC's Runtime System as an OpenMP Runtime"
 12. [Deferred Task Execution](#12-deferred-task-execution)
 13. [Zero-Copy FFI with Pinned ByteArray](#13-zero-copy-ffi-with-pinned-bytearray)
 14. [Linear Typed Arrays](#14-linear-typed-arrays)
-15. [Benchmarks](#15-benchmarks)
-16. [Notable Bugs and Fixes](#16-notable-bugs-and-fixes)
-17. [Limitations](#17-limitations)
-18. [Conclusions](#18-conclusions)
+15. [Shared Memory Demos](#15-shared-memory-demos)
+16. [Benchmarks](#16-benchmarks)
+17. [Notable Bugs and Fixes](#17-notable-bugs-and-fixes)
+18. [Limitations](#18-limitations)
+19. [Conclusions](#19-conclusions)
 19. [Appendix: Implemented ABI Surface](#appendix-implemented-abi-surface)
 
 ---
@@ -902,7 +903,83 @@ subsequent Haskell reads.
 
 ---
 
-## 15. Benchmarks
+## 15. Shared Memory Demos
+
+Phases 16–17 established zero-copy sharing (pinned ByteArray) and
+type-safe partitioning (linear tokens). Three demos put these together,
+showing Haskell and OpenMP C code collaborating on the same array with
+progressive coordination strategies.
+
+All three use the same workload: element-wise
+`f(x) = sin(x) * cos(x) + sqrt(|x|)` applied by both Haskell and C/OpenMP
+to portions of a shared array.
+
+### 15.1 Demo 1: Producer-Consumer
+
+Sequential handoff — Haskell fills, C/OpenMP transforms, Haskell reads.
+No concurrent access, no synchronization. Establishes the basic zero-copy
+sharing pattern.
+
+| N | OpenMP transform |
+|---|---|
+| 10,000 | 0.04 ms |
+| 100,000 | 0.40 ms |
+| 1,000,000 | 4.21 ms |
+
+### 15.2 Demo 2: Synchronized Concurrent Access
+
+Haskell and C/OpenMP each process a disjoint half. Without compile-time
+proof of disjointness, `GOMP_barrier()` is needed for memory visibility —
+even though the regions never overlap.
+
+### 15.3 Demo 3: Linear Concurrent Access
+
+Same partition as Demo 2, but using `split`/`combine` from
+`Data.Array.Linear` to prove disjointness at the type level:
+
+```haskell
+case halve rw arrOut of
+    MkSlice st rwL rwR arrL arrR ->
+        let rwL' = linearTransform rwL arrIn arrL   -- Haskell: left half
+            !()  = unsafePerformIO $                -- C: right half
+                c_transform_range pIn pOut half len
+        in combine st rwL' rwR                      -- no barrier
+```
+
+The linear token `rwR` proves no Haskell code accesses the right half
+during C's execution. `combine` consumes both tokens, returning the parent
+— zero-cost, no allocation.
+
+### 15.4 Results
+
+**Barrier vs linear (iteration loop, 4 threads):**
+
+| N | Iters | With barrier | Linear | Saved |
+|---|---|---|---|---|
+| 10,000 | 1000 | 202.5 ms | 194.2 ms | 4.1% |
+| 100,000 | 100 | 231.9 ms | 221.7 ms | 4.4% |
+| 1,000,000 | 10 | 224.6 ms | 221.8 ms | 1.3% |
+
+**Partition scaling (N=1,000,000) — linear types:**
+
+| Partitions | Time (ms) |
+|---|---|
+| 2 | 39.0 |
+| 4 | 39.8 |
+| 8 | 38.9 |
+| 16 | 38.3 |
+| 32 | 38.4 |
+
+Scaling is flat: zero barriers regardless of partition count.
+
+The modest 1–4% improvement reflects that barrier latency (~0.3 us) is
+small relative to the compute workload. The primary value is **correctness**:
+the type checker rejects overlapping access at compile time, preventing data
+races without runtime cost.
+
+---
+
+## 16. Benchmarks
 
 All benchmarks on an Intel i7-10750H (6C/12T), NixOS, GCC 15.2, GHC 9.10.3,
 powersave governor. Best-of-N timing to reduce CPU frequency variance.
@@ -1037,7 +1114,7 @@ both achieve near-ideal scaling on 4 threads.
 
 ---
 
-## 16. Notable Bugs and Fixes
+## 17. Notable Bugs and Fixes
 
 ### 12.1 Barrier Sense Mismatch Deadlock
 
@@ -1070,7 +1147,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 17. Limitations
+## 18. Limitations
 
 | Limitation | Impact | Notes |
 |---|---|---|
@@ -1083,7 +1160,7 @@ interleaved testing confirmed parity (3.85ms vs 3.91ms).
 
 ---
 
-## 18. Conclusions
+## 19. Conclusions
 
 GHC's Runtime System can serve as a fully functional OpenMP runtime with
 **zero measurable overhead** compared to native libgomp. The
