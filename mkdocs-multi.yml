@@ -57,3 +57,5 @@ nav:
     - NCG vs LLVM: appendix-ncg-llvm.md
     - RTS Internals: appendix-rts.md
     - Sense-Reversing Barrier: appendix-barrier.md
+    - Zero-Copy FFI: appendix-zero-copy.md
+    - Linear Typed Arrays: appendix-linear-arrays.md

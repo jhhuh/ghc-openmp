@@ -229,21 +229,5 @@ closely at every batch size.
 <img src="charts/batched-calls.svg" alt="Batched Safe Calls: Per-Call Overhead" />
 </figure>
 
-### 8.9 Zero-Copy Improvement
-
-*Source: [`HsZeroCopy.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsZeroCopy.hs)*
-
-Haskell sequential DGEMM inner loop, pinned ByteArray with unboxed primops
-vs standard boxed FFI:
-
-| N | Boxed (ms) | Unboxed (ms) | Speedup |
-|--:|-----------:|-------------:|--------:|
-| 256 | 57.3 | 53.4 | 1.07x |
-| 512 | 457.9 | 384.6 | **1.19x** |
-
-The 19% improvement at N=512 comes from eliminating `CDouble` boxing in the
-O(n³) inner loop. `-ddump-simpl` confirms the hot loop uses `+##`, `*##`, and
-`readDoubleArray#` with no `D#` constructor.
-
 ---
 

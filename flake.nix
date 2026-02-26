@@ -121,6 +121,8 @@
             promote_headings < docs/sections/A3-ncg-llvm.md > docs/pages/appendix-ncg-llvm.md
             promote_headings < docs/sections/A4-rts-internals.md > docs/pages/appendix-rts.md
             promote_headings < docs/sections/A5-barrier.md > docs/pages/appendix-barrier.md
+            promote_headings < docs/sections/A6-zero-copy.md > docs/pages/appendix-zero-copy.md
+            promote_headings < docs/sections/A7-linear-arrays.md > docs/pages/appendix-linear-arrays.md
 
             mkdocs build -f mkdocs-multi.yml -d _site/pages
 

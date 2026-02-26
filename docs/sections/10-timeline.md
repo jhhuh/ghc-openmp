@@ -20,8 +20,8 @@ a reference to the section containing full details.
 | 13 | Parallelism crossover analysis — break-even at ~500 elements | [§8.4](#84-parallelism-crossover) |
 | 14 | GHC native parallelism vs OpenMP — parity with `-fllvm` | [§8.5](#85-ghc-native-parallelism-vs-openmp) |
 | 15 | Deferred task execution with work-stealing barriers | [§4.3](#43-task-queues-and-work-stealing) |
-| 16 | Zero-copy FFI with pinned ByteArray — 19% inner loop speedup | [§7.3](#73-zero-copy-ffi-with-pinned-bytearray) |
-| 17 | Linear typed arrays for type-safe disjoint partitioning | [§7.4](#74-linear-typed-arrays) |
+| 16 | Zero-copy FFI with pinned ByteArray — 19% inner loop speedup | [§A.6](#a6-zero-copy-ffi-with-pinned-bytearray) |
+| 17 | Linear typed arrays for type-safe disjoint partitioning | [§A.7](#a7-linear-typed-arrays) |
 | 18 | Runtime improvements: guided scheduling, hybrid barriers, task pools | [§4](#4-architecture) |
 
 ---
