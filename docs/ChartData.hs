@@ -5,22 +5,22 @@ module ChartData where
 dgemmLabels :: [String]
 dgemmLabels = ["N=128", "N=256", "N=512", "N=1024"]
 dgemmData :: [[Double]]
-dgemmData = [[0.64, 0.77], [9.47, 10.22], [66.11, 68.05], [603.84, 536.88]]
+dgemmData = [[0.93, 1.05], [10.83, 13.60], [78.59, 83.66], [670.05, 654.66]]
 
 -- Crossover
 crossoverLabels :: [String]
 crossoverLabels = ["100", "200", "500", "1K", "5K", "100K"]
 crossoverSeq, crossoverPar :: [Double]
-crossoverSeq = [0.5, 1.3, 3.6, 7.5, 48.1, 1100.9]
-crossoverPar = [2.1, 2.2, 2.9, 3.8, 16.5, 290.0]
+crossoverSeq = [0.7, 3.1, 8.8, 10.2, 64.6, 1528.7]
+crossoverPar = [2.8, 2.9, 5.8, 5.2, 21.7, 385.5]
 
 -- FFI overhead
 ffiData :: [[Double]]
-ffiData = [[0.0], [2.3], [66.6]]
+ffiData = [[0.0], [3.1], [89.8]]
 
 -- Batched calls
 batchedLabels :: [String]
 batchedLabels = ["1", "2", "5", "10", "20", "50", "100"]
 batchedCmm, batchedSafe :: [Double]
-batchedCmm = [68.9, 35.9, 15.4, 8.8, 5.3, 3.4, 2.7]
-batchedSafe = [70.7, 72.3, 71.2, 70.7, 71.7, 71.3, 71.1]
+batchedCmm = [97.9, 50.3, 20.8, 12.4, 7.6, 4.7, 3.7]
+batchedSafe = [98.3, 100.0, 97.3, 97.4, 102.6, 104.6, 97.8]

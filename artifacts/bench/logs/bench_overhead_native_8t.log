@@ -1,0 +1,8 @@
+OpenMP Runtime Benchmark
+Threads: 8
+
+1. Fork/join overhead:         1.461 us/iter
+2. Barrier latency:            0.434 us/iter
+3. Parallel for (1M sin):      3.507 ms
+4. Critical (1000/thread):     0.942 ms
+5. Tasks (10000):             14.724 ms

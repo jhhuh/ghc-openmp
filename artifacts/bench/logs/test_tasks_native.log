@@ -7,7 +7,7 @@ Threads: 4
 
 --- Test 2: Performance ---
   Sequential:  0.0 ms
-  Tasks (4T):  33.7 ms
+  Tasks (4T):  60.8 ms
   Speedup:     0.00x
 
 === Done ===

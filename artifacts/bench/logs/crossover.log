@@ -6,29 +6,29 @@ OpenMP threads:   4
 --- Crossover: sequential unsafe vs parallel safe FFI ---
   Elements | Seq unsafe  | Seq safe    | Par safe    | Speedup (par/seq)
   ---------|-------------|-------------|-------------|------------------
-        10 |      0.1 us |      0.2 us |      1.9 us |   0.04x
-        20 |      0.1 us |      0.2 us |      2.0 us |   0.06x
-        50 |      0.3 us |      0.4 us |      2.0 us |   0.14x
-       100 |      0.5 us |      0.6 us |      2.1 us |   0.26x
-       200 |      1.3 us |      1.3 us |      2.2 us |   0.57x
-       500 |      3.6 us |      3.7 us |      2.9 us |   1.23x <-- par wins
-      1000 |      7.5 us |      7.6 us |      3.8 us |   1.99x <-- par wins
-      2000 |     15.6 us |     15.8 us |      5.9 us |   2.63x <-- par wins
-      5000 |     48.1 us |     48.1 us |     16.5 us |   2.91x <-- par wins
-     10000 |    103.6 us |    105.8 us |     30.8 us |   3.36x <-- par wins
-     20000 |    219.5 us |    219.6 us |     59.0 us |   3.72x <-- par wins
-     50000 |    561.4 us |    561.7 us |    146.0 us |   3.85x <-- par wins
-    100000 |   1100.9 us |   1108.7 us |    290.0 us |   3.80x <-- par wins
-    200000 |   2253.8 us |   2213.9 us |    555.5 us |   4.06x <-- par wins
-    500000 |   5538.1 us |   5537.0 us |   1404.5 us |   3.94x <-- par wins
-   1000000 |  11089.3 us |  11087.6 us |   2813.9 us |   3.94x <-- par wins
+        10 |      0.1 us |      0.2 us |      2.7 us |   0.04x
+        20 |      0.2 us |      0.3 us |      2.6 us |   0.06x
+        50 |      0.4 us |      0.5 us |      2.8 us |   0.13x
+       100 |      0.7 us |      0.8 us |      2.8 us |   0.26x
+       200 |      3.1 us |      1.8 us |      2.9 us |   1.08x <-- par wins
+       500 |      8.8 us |      8.9 us |      5.8 us |   1.50x <-- par wins
+      1000 |     10.2 us |     10.3 us |      5.2 us |   1.96x <-- par wins
+      2000 |     21.0 us |     21.1 us |      8.0 us |   2.63x <-- par wins
+      5000 |     64.6 us |     66.0 us |     21.7 us |   2.98x <-- par wins
+     10000 |    142.4 us |    137.2 us |     40.1 us |   3.55x <-- par wins
+     20000 |    295.4 us |    288.7 us |     79.1 us |   3.73x <-- par wins
+     50000 |    737.9 us |    756.9 us |    194.3 us |   3.80x <-- par wins
+    100000 |   1528.7 us |   1524.9 us |    385.5 us |   3.97x <-- par wins
+    200000 |   3043.3 us |   2988.2 us |    775.7 us |   3.92x <-- par wins
+    500000 |   7614.0 us |   7461.5 us |   1935.3 us |   3.93x <-- par wins
+   1000000 |  15604.8 us |  15538.7 us |   4057.7 us |   3.85x <-- par wins
 
 --- Overhead breakdown ---
-  Unsafe FFI + 1 sin():          21 ns
-  Safe FFI + 1 sin():           114 ns
-  Safe FFI + OpenMP + 1 sin:   1796 ns
-  Safe FFI overhead:             93 ns (safe - unsafe)
-  OpenMP fork/join overhead:   1682 ns (omp - safe)
+  Unsafe FFI + 1 sin():          27 ns
+  Safe FFI + 1 sin():           132 ns
+  Safe FFI + OpenMP + 1 sin:   2463 ns
+  Safe FFI overhead:            105 ns (safe - unsafe)
+  OpenMP fork/join overhead:   2331 ns (omp - safe)
 
 --- Interpretation ---
   For sinsum (compute-bound, ~11ns per element):

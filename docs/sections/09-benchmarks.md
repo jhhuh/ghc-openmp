@@ -12,10 +12,10 @@ powersave governor. Best-of-N timing to reduce CPU frequency variance.
 
 | Threads | Native libgomp | RTS-backed | Ratio |
 |---|---|---|---|
-| 1 | 0.171 | 0.030 | 5.7x faster |
-| 2 | 0.828 | 0.420 | 2.0x faster |
-| 4 | 0.972 | 0.811 | 1.2x faster |
-| 8 | 1.346 | 1.517 | 1.13x |
+| 1 | 0.464 | 0.033 | 14.1x faster |
+| 2 | 0.765 | 0.499 | 1.5x faster |
+| 4 | 0.931 | 0.945 | 1.02 |
+| 8 | 1.461 | 1.692 | 1.16 |
 <!-- /BENCH:overhead_forkjoin -->
 
 <!-- BENCH:overhead_barrier -->
@@ -23,10 +23,10 @@ powersave governor. Best-of-N timing to reduce CPU frequency variance.
 
 | Threads | Native libgomp | RTS-backed | Ratio |
 |---|---|---|---|
-| 1 | 0.026 | 0.002 | 13x faster |
-| 2 | 0.313 | 0.136 | 2.3x faster |
-| 4 | 0.508 | 0.254 | 2.0x faster |
-| 8 | 0.762 | 0.482 | 1.6x faster |
+| 1 | 0.276 | 0.002 | 138.0x faster |
+| 2 | 0.242 | 0.137 | 1.8x faster |
+| 4 | 0.248 | 0.270 | 1.09 |
+| 8 | 0.434 | 0.470 | 1.08 |
 <!-- /BENCH:overhead_barrier -->
 
 <!-- BENCH:overhead_parfor -->
@@ -34,10 +34,10 @@ powersave governor. Best-of-N timing to reduce CPU frequency variance.
 
 | Threads | Native libgomp | RTS-backed | Ratio |
 |---|---|---|---|
-| 1 | 15.764 | 15.427 | 0.98x |
-| 2 | 7.730 | 7.783 | 1.01x |
-| 4 | 3.849 | 3.905 | 1.01x |
-| 8 | 3.358 | 3.503 | 1.04x |
+| 1 | 15.973 | 15.388 | 0.96 |
+| 2 | 7.453 | 7.641 | 1.03 |
+| 4 | 3.777 | 3.879 | 1.03 |
+| 8 | 3.507 | 3.500 | 1.00 |
 <!-- /BENCH:overhead_parfor -->
 
 <!-- BENCH:overhead_critical -->
@@ -45,10 +45,10 @@ powersave governor. Best-of-N timing to reduce CPU frequency variance.
 
 | Threads | Native libgomp | RTS-backed | Ratio |
 |---|---|---|---|
-| 1 | 0.054 | 0.026 | 2.1x faster |
-| 2 | 0.318 | 0.254 | 1.3x faster |
-| 4 | 0.915 | 0.381 | 2.4x faster |
-| 8 | 2.135 | 1.201 | 1.8x faster |
+| 1 | 0.021 | 0.026 | 1.24 |
+| 2 | 0.069 | 0.264 | 3.83 |
+| 4 | 0.352 | 0.327 | 1.1x faster |
+| 8 | 0.942 | 1.318 | 1.40 |
 <!-- /BENCH:overhead_critical -->
 
 ### 8.2 DGEMM
@@ -63,10 +63,10 @@ native libgomp or our runtime. Checksums match exactly.
 <!-- BENCH:dgemm_4t -->
 | N | Native (ms) | RTS (ms) | Ratio | GFLOPS (RTS) |
 |---|---|---|---|---|
-| 128 | 0.64 | 0.77 | 1.20x | 5.47 |
-| 256 | 9.47 | 10.22 | 1.08x | 3.28 |
-| 512 | 66.11 | 68.05 | 1.03x | 3.94 |
-| 1024 | 603.84 | 536.88 | 0.89x | 4.00 |
+| 128 | 0.93 | 1.05 | 1.13x | 4.01 |
+| 256 | 10.83 | 13.60 | 1.26x | 2.47 |
+| 512 | 78.59 | 83.66 | 1.06x | 3.21 |
+| 1024 | 670.05 | 654.66 | 0.98x | 3.28 |
 <!-- /BENCH:dgemm_4t -->
 
 Interleaved re-runs confirm the two runtimes trade leads: the difference is
@@ -81,9 +81,9 @@ CPU frequency noise, not runtime overhead.
 
 | Threads | Time (ms) | GFLOPS | Speedup |
 |---|---|---|---|
-| 1 | 2434.99 | 0.88 | 1.0x |
-| 2 | 1330.19 | 1.61 | 1.8x |
-| 4 | 663.37 | 3.24 | 3.7x |
+| 1 | 2965.94 | 0.72 | 1.0x |
+| 2 | 1880.42 | 1.14 | 1.6x |
+| 4 | 654.66 | 3.28 | 4.5x |
 <!-- /BENCH:dgemm_scaling -->
 
 ### 8.3 FFI Scaling
@@ -112,12 +112,12 @@ When does OpenMP from Haskell beat sequential C? We measured sinsum
 <!-- BENCH:crossover -->
 | Elements | Sequential | Parallel | Speedup |
 |---|---|---|---|
-| 100 | 0.5 us | 2.1 us | 0.26x |
-| 200 | 1.3 us | 2.2 us | 0.57x |
-| 500 | 3.6 us | 2.9 us | **1.23x** |
-| 1000 | 7.5 us | 3.8 us | **1.99x** |
-| 5000 | 48.1 us | 16.5 us | **2.91x** |
-| 100000 | 1100.9 us | 290.0 us | **3.80x** |
+| 100 | 0.7 us | 2.8 us | 0.26x |
+| 200 | 3.1 us | 2.9 us | **1.08x** |
+| 500 | 8.8 us | 5.8 us | **1.50x** |
+| 1000 | 10.2 us | 5.2 us | **1.96x** |
+| 5000 | 64.6 us | 21.7 us | **2.98x** |
+| 100000 | 1528.7 us | 385.5 us | **3.97x** |
 <!-- /BENCH:crossover -->
 
 The crossover is at **~500 elements** — above this, OpenMP parallel execution
@@ -140,10 +140,10 @@ manual work splitting compare to OpenMP via safe FFI?
 <!-- BENCH:par_compare -->
 | Elements | Seq Haskell | Seq C | Par Haskell | Par OpenMP | Hs/OMP ratio |
 |---|---|---|---|---|---|
-| 10K | 233.6 us | 105.8 us | 77.8 us | 51.1 us | 1.52x |
-| 100K | 2472.0 us | 1104.6 us | 634.9 us | 515.4 us | 1.23x |
-| 1M | 24136.5 us | 11088.9 us | 6094.4 us | 5037.8 us | 1.21x |
-| 10M | 241447.8 us | 111060.6 us | 60838.7 us | 30872.0 us | 1.97x |
+| 10K | 327.0 us | 148.0 us | 107.3 us | 42.9 us | 2.50x |
+| 100K | 3283.6 us | 1549.8 us | 881.1 us | 375.8 us | 2.34x |
+| 1M | 31922.8 us | 15417.0 us | 8637.3 us | 6626.1 us | 1.30x |
+| 10M | 336020.5 us | 153998.0 us | 85324.7 us | 40187.1 us | 2.12x |
 <!-- /BENCH:par_compare -->
 
 With the default NCG backend, OpenMP is consistently **~2x faster** than
@@ -176,11 +176,11 @@ Deferred task execution with work-stealing barriers (4 threads, best of 5):
 <!-- BENCH:tasks -->
 | Tasks | Sequential | Parallel | Speedup |
 |------:|-----------:|---------:|--------:|
-| 100   | 1.1 ms     | 0.3 ms   | 3.85x   |
-| 500   | 5.7 ms     | 1.5 ms   | 3.93x   |
-| 1,000   | 10.8 ms     | 3.6 ms   | 3.03x   |
-| 5,000   | 55.5 ms     | 15.5 ms   | 3.58x   |
-| 10,000   | 111.1 ms     | 29.4 ms   | 3.77x   |
+| 100   | 1.5 ms     | 0.4 ms   | 3.81x   |
+| 500   | 7.7 ms     | 2.5 ms   | 3.12x   |
+| 1,000   | 15.6 ms     | 5.0 ms   | 3.12x   |
+| 5,000   | 78.1 ms     | 19.9 ms   | 3.93x   |
+| 10,000   | 155.9 ms     | 42.6 ms   | 3.66x   |
 <!-- /BENCH:tasks -->
 
 Near-linear scaling (3.4-4.0x on 4 threads). Correctness verified against
@@ -194,8 +194,8 @@ sequential reference with exact match.
 | Convention | ns/call | Relative | Mechanism |
 |---|---|---|---|
 | `foreign import prim` (Cmm) | ~0 | — | Direct register read, GHC optimizes away |
-| `foreign import ccall unsafe` | 2.3 | — | Save/restore STG registers |
-| `foreign import ccall safe` | 66.6 | 29x vs unsafe | + suspendThread/resumeThread |
+| `foreign import ccall unsafe` | 3.1 | — | Save/restore STG registers |
+| `foreign import ccall safe` | 89.8 | 29x vs unsafe | + suspendThread/resumeThread |
 <!-- /BENCH:calling_convention -->
 
 <figure>
@@ -212,13 +212,13 @@ Amortizing the ~68ns safe FFI overhead by batching N C calls within a single
 <!-- BENCH:batched -->
 | Batch size | Standard safe | Cmm batched | Speedup |
 |---|---|---|---|
-| 1 | 70.7 ns | 68.9 ns | 1.0x |
-| 2 | 72.3 ns | 35.9 ns | 2.0x |
-| 5 | 71.2 ns | 15.4 ns | 4.6x |
-| 10 | 70.7 ns | 8.8 ns | 8.0x |
-| 20 | 71.7 ns | 5.3 ns | 13.5x |
-| 50 | 71.3 ns | 3.4 ns | 20.9x |
-| 100 | 71.1 ns | 2.7 ns | 26.5x |
+| 1 | 98.3 ns | 97.9 ns | 1.0x |
+| 2 | 100.0 ns | 50.3 ns | 2.0x |
+| 5 | 97.3 ns | 20.8 ns | 4.7x |
+| 10 | 97.4 ns | 12.4 ns | 7.8x |
+| 20 | 102.6 ns | 7.6 ns | 13.4x |
+| 50 | 104.6 ns | 4.7 ns | 22.2x |
+| 100 | 97.8 ns | 3.7 ns | 26.4x |
 <!-- /BENCH:batched -->
 
 At batch=100, per-call overhead drops to 2.7 ns — within 35% of unsafe FFI

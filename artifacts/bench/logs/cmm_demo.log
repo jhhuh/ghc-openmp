@@ -6,17 +6,17 @@
 
 --- Calling convention overhead (best of 5, interleaved) ---
   prim:      0.0 ns/call  (100000000 iters)
-  unsafe:    2.3 ns/call  (10000000 iters)
-  safe:     66.6 ns/call  (1000000 iters)
+  unsafe:    3.1 ns/call  (10000000 iters)
+  safe:     89.8 ns/call  (1000000 iters)
 
 --- Overhead ratios ---
-  unsafe/prim: 12917787.2x
-  safe/prim:   370117500.0x
-  safe/unsafe:  28.7x
+  unsafe/prim: 13959895.0x
+  safe/prim:   408356663.6x
+  safe/unsafe:  29.3x
 
 --- Interpretation ---
   prim:   ~0.0 ns  (Cmm: register read, no FFI boundary)
-  unsafe: ~2 ns  (C call: STG register save/restore)
-  safe:   ~67 ns  (+ suspendThread/resumeThread)
+  unsafe: ~3 ns  (C call: STG register save/restore)
+  safe:   ~90 ns  (+ suspendThread/resumeThread)
 
 === Done ===

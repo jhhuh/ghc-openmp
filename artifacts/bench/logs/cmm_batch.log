@@ -6,13 +6,13 @@
 --- Per-call overhead at different batch sizes ---
   Batch size | Standard safe | Cmm batched | Speedup
   -----------|---------------|-------------|--------
-           1 |      70.7 ns  |      68.9 ns |   1.0x
-           2 |      72.3 ns  |      35.9 ns |   2.0x
-           5 |      71.2 ns  |      15.4 ns |   4.6x
-          10 |      70.7 ns  |       8.8 ns |   8.0x
-          20 |      71.7 ns  |       5.3 ns |  13.5x
-          50 |      71.3 ns  |       3.4 ns |  20.9x
-         100 |      71.1 ns  |       2.7 ns |  26.5x
+           1 |      98.3 ns  |      97.9 ns |   1.0x
+           2 |     100.0 ns  |      50.3 ns |   2.0x
+           5 |      97.3 ns  |      20.8 ns |   4.7x
+          10 |      97.4 ns  |      12.4 ns |   7.8x
+          20 |     102.6 ns  |       7.6 ns |  13.4x
+          50 |     104.6 ns  |       4.7 ns |  22.2x
+         100 |      97.8 ns  |       3.7 ns |  26.4x
 
 --- Analysis ---
   Standard safe: each call pays ~65ns suspend/resume overhead.
