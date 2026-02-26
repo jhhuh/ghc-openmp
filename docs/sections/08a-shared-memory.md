@@ -1,4 +1,4 @@
-## A.8 Shared Memory Demos
+## Shared Memory Demos
 
 *Source: [`HsSharedMem1.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsSharedMem1.hs), [`HsSharedMem2.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsSharedMem2.hs), [`HsSharedMem3.hs`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/demos/HsSharedMem3.hs), [`omp_shared.c`](https://github.com/jhhuh/ghc-openmp/blob/GIT_COMMIT/cbits/omp_shared.c)*
 
