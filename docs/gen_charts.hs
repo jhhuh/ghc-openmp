@@ -4,6 +4,8 @@ import Graphics.Rendering.Chart.Backend.Diagrams (FileOptions (..), toFile)
 import Graphics.Rendering.Chart.Easy
 import System.Directory (createDirectoryIfMissing)
 
+import ChartData
+
 -- Colors
 clRed, clGreen, clGray, clBlue, clAmber, clLtGray :: Colour Double
 clRed = sRGB24 0xef 0x44 0x44
@@ -192,26 +194,26 @@ chartDgemmComparison :: IO ()
 chartDgemmComparison =
   toFile (def {_fo_size = chartSize}) "charts/dgemm-comparison.svg" $ do
     layout_title .= "DGEMM Head-to-Head: Native libgomp vs RTS (4 threads, ms)"
-    layout_x_axis . laxis_generate .= autoIndexAxis ["N=128", "N=256", "N=512", "N=1024"]
+    layout_x_axis . laxis_generate .= autoIndexAxis dgemmLabels
     layout_y_axis . laxis_title .= "Time (ms)"
     setColors [opaque clGray, opaque clBlue]
     plot $
       plotBars
         <$> bars
           ["Native libgomp", "RTS-backed"]
-          (addIndexes ([[0.86, 0.94], [12.62, 12.28], [77.51, 76.96], [748.83, 663.37]] :: [[Double]]))
+          (addIndexes dgemmData)
 
 -- Chart 3: Parallelism Crossover — line chart, 2 series
 chartCrossover :: IO ()
 chartCrossover =
   toFile (def {_fo_size = chartSize}) "charts/crossover.svg" $ do
     layout_title .= "Parallelism Crossover: Sequential vs Parallel (4 threads)"
-    layout_x_axis . laxis_generate .= autoIndexAxis ["100", "200", "500", "1K", "5K", "100K"]
+    layout_x_axis . laxis_generate .= autoIndexAxis crossoverLabels
     layout_y_axis . laxis_title .= "Time (\x03bcs)"
     setColors [opaque clAmber, opaque clBlue]
     let idx = map PlotIndex [0 ..]
-    plot $ line "Sequential C (unsafe FFI)" [zip idx ([0.5, 1.3, 3.6, 7.5, 49.0, 1132] :: [Double])]
-    plot $ line "Parallel OpenMP (safe FFI)" [zip idx ([2.1, 2.2, 2.9, 3.9, 16.6, 279] :: [Double])]
+    plot $ line "Sequential C (unsafe FFI)" [zip idx crossoverSeq]
+    plot $ line "Parallel OpenMP (safe FFI)" [zip idx crossoverPar]
 
 -- Chart 4: FFI Calling Convention Overhead — simple bar, 1 series
 chartFfiOverhead :: IO ()
@@ -226,16 +228,16 @@ chartFfiOverhead =
       plotBars
         <$> bars
           [""]
-          (addIndexes ([[0.1], [2.3], [67.5]] :: [[Double]]))
+          (addIndexes ffiData)
 
 -- Chart 5: Batched Safe Calls — line chart, 2 series
 chartBatchedCalls :: IO ()
 chartBatchedCalls =
   toFile (def {_fo_size = chartSize}) "charts/batched-calls.svg" $ do
     layout_title .= "Batched Safe Calls: Per-Call Overhead (ns)"
-    layout_x_axis . laxis_generate .= autoIndexAxis ["1", "2", "5", "10", "20", "50", "100"]
+    layout_x_axis . laxis_generate .= autoIndexAxis batchedLabels
     layout_y_axis . laxis_title .= "ns/call"
     setColors [opaque clGreen, opaque clLtGray]
     let idx = map PlotIndex [0 ..]
-    plot $ line "Cmm batched" [zip idx ([69.1, 36.1, 15.2, 8.7, 5.3, 3.4, 2.7] :: [Double])]
-    plot $ line "Standard safe" [zip idx ([72.4, 71.3, 73.0, 71.0, 71.1, 71.7, 71.4] :: [Double])]
+    plot $ line "Cmm batched" [zip idx batchedCmm]
+    plot $ line "Standard safe" [zip idx batchedSafe]

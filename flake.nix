@@ -58,7 +58,7 @@
             export LOCALE_ARCHIVE=${pkgs.glibcLocales}/lib/locale/locale-archive
 
             # Generate benchmark charts
-            ghc -O2 -tmpdir /tmp -hidir /tmp -odir /tmp -stubdir /tmp -o gen_charts docs/gen_charts.hs
+            ghc -O2 -idocs -tmpdir /tmp -hidir /tmp -odir /tmp -stubdir /tmp -o gen_charts docs/gen_charts.hs
             (cd docs && ../gen_charts)
             rm gen_charts
 
