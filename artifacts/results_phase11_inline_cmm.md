@@ -61,5 +61,5 @@ Requires:
 ## Files
 
 - `src/HsInlineCmm.hs` — Demo using quasiquoter
-- `ghc-openmp.cabal` — Cabal package with inline-cmm dependency
+- `inline-cmm-demo.cabal` — Cabal package with inline-cmm dependency
 - `cabal.project` — Source repository package for inline-cmm
